@@ -1,7 +1,7 @@
 mod path_segment;
 
 use core::str;
-use std::{collections::{BinaryHeap, HashMap, HashSet}, io::{BufRead, BufReader, Read}};
+use std::{collections::{BinaryHeap, HashMap, HashSet, BTreeSet, BTreeMap}, io::{BufRead, BufReader, Read}};
 use clap::Parser;
 use flate2::read::MultiGzDecoder;
 use itertools::Itertools;
@@ -50,6 +50,7 @@ pub fn parse_gfa_paths_walks(
     let mut digrams: BinaryHeap<ColorSet> = BinaryHeap::new();
 
     let mut buf = vec![];
+    let mut path_id = 0;
     while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
         if buf[0] == b'P' || buf[0] == b'W' {
             let (path_seg, buf_path_seg) = match buf[0] {
@@ -59,10 +60,11 @@ pub fn parse_gfa_paths_walks(
             };
 
             match buf[0] {
-                b'P' => parse_path_seq(&buf, node_ids_by_name, &mut forward_neighbors, &mut backward_neighbors, &mut digrams),
+                b'P' => parse_path_seq(&buf, path_id, node_ids_by_name, &mut forward_neighbors, &mut backward_neighbors, &mut digrams),
                 b'W' => parse_walk_seq(&buf, node_ids_by_name, &mut forward_neighbors, &mut backward_neighbors, &mut digrams),
                 _ => unreachable!(),
             }
+            path_id += 1;
         }
     }
 }
@@ -71,9 +73,9 @@ pub fn parse_path_seq(
     data: &[u8],
     path_id: u64,
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
-    forward_neighbors: &mut Vec<Vec<u64>>,
-    backward_neighbors: &mut Vec<Vec<u64>>,
-    digrams: &mut BinaryHeap<ColorSet>,
+    forward_neighbors: &mut HashMap<NodeId, BTreeSet<NodeId>>,
+    backward_neighbors: &mut HashMap<NodeId, BTreeSet<NodeId>>,
+    digrams: &mut BTreeMap<(NodeId, NodeId), ColorSet>,
 ) {
     let mut nodes_visited: HashMap<NodeId, usize> = HashMap::new();
     let mut it = data.iter();
@@ -81,16 +83,24 @@ pub fn parse_path_seq(
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
         .unwrap();
 
-    let prev_node = todo!();
-    let first = first.trim_ascii();
-    let first = node_ids_by_name[&first[..first.len()-1]] | (((first[first.len()-1] == b'+') as NodeId) << (NodeId::BITS - 1));
-    data[..end].split(|&x| x == b',').for_each(|second| {
+    let prev_node = data[..end]
+        .split(|&x| x == b',')
+        .take(1)
+        .collect::<Vec<_>>()[0]
+        .trim_ascii();
+    let mut prev_node = node_ids_by_name[&prev_node[..prev_node.len()-1]] | (((prev_node[prev_node.len()-1] == b'+') as NodeId) << (NodeId::BITS - 1));
+    data[..end].split(|&x| x == b',').for_each(|current_node| {
 
-        let second = second.trim_ascii();
-        let second = node_ids_by_name[&second[..second.len()-1]] | (((second[second.len()-1] == b'+') as NodeId) << (NodeId::BITS - 1));
+        let current_node = current_node.trim_ascii();
+        let current_node = node_ids_by_name[&current_node[..current_node.len()-1]] | (((current_node[current_node.len()-1] == b'+') as NodeId) << (NodeId::BITS - 1));
 
-        nodes_visited.entry(second).and_modify(|counter| *counter += 1).or_insert(0);
-        let count = nodes_visited[&second];
+        nodes_visited.entry(current_node).and_modify(|counter| *counter += 1).or_insert(0);
+        let count = nodes_visited[&current_node];
+        let current_node = (count as u64) << 32 ^ current_node;
+
+        forward_neighbors.entry(prev_node).and_modify(|n| { n.insert(current_node); } ).or_insert(BTreeSet::from([current_node]));
+        backward_neighbors.entry(current_node).and_modify(|n| { n.insert(prev_node); }).or_insert(BTreeSet::from([prev_node]));
+
     });
 
     log::debug!("parsing path sequences of size {} bytes..", end);
