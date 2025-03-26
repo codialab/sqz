@@ -1,15 +1,24 @@
 mod path_segment;
 
-use core::str;
-use std::{collections::{BTreeMap, BTreeSet, HashMap, HashSet}, io::{BufRead, BufReader, Read}};
 use clap::Parser;
+use core::str;
 use flate2::read::MultiGzDecoder;
-use path_segment::PathSegment;
-use std::str::FromStr;
 use lazy_static::lazy_static;
+use path_segment::PathSegment;
+use priority_queue::PriorityQueue;
 use regex::bytes::Regex;
+use std::str::FromStr;
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    io::{BufRead, BufReader, Read},
+};
+use indexmap::IndexMap;
+
+const MAX_OCCURENCES: usize = 2;
 
 type NodeId = u64;
+type NeighborList = Vec<BTreeSet<NodeId>>;
+type Digrams = PriorityQueue<(NodeId, NodeId), ColorSet>;
 
 lazy_static! {
     static ref RE_WALK: Regex = Regex::new(r"([><])([!-;=?-~]+)").unwrap();
@@ -17,6 +26,21 @@ lazy_static! {
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct ColorSet(HashSet<u64>);
+
+impl ColorSet {
+    fn intersection(&self, other: &ColorSet) -> ColorSet {
+        ColorSet(
+            self.0
+                .intersection(&other.0)
+                .copied()
+                .collect::<HashSet<_>>(),
+        )
+    }
+
+    fn difference(&self, other: &ColorSet) -> ColorSet {
+        ColorSet(self.0.difference(&other.0).copied().collect::<HashSet<_>>())
+    }
+}
 
 impl PartialOrd for ColorSet {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -45,14 +69,21 @@ pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>>
 pub fn parse_gfa_paths_walks(
     gfa_file: &str,
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
-) -> (Vec<BTreeSet<NodeId>>, Vec<BTreeSet<NodeId>>, BTreeMap<(NodeId, NodeId), ColorSet>, HashMap<u64, PathSegment>) {
+) -> (
+    NeighborList,
+    NeighborList,
+    Digrams,
+    HashMap<u64, PathSegment>,
+) {
     log::info!("parsing path + walk sequences");
     let mut data = bufreader_from_compressed_gfa(gfa_file);
 
     let number_of_nodes = node_ids_by_name.len();
-    let mut forward_neighbors: Vec<BTreeSet<NodeId>> = vec![BTreeSet::new(); number_of_nodes * 2];            // Multiply by two to account for orientation
-    let mut backward_neighbors: Vec<BTreeSet<NodeId>> = vec![BTreeSet::new(); number_of_nodes * 2];
-    let mut digrams: HashMap<(NodeId, NodeId), ColorSet> = HashMap::new();
+    let mut forward_neighbors: Vec<BTreeSet<NodeId>> =
+        vec![BTreeSet::new(); number_of_nodes * 2 + 1]; // Multiply by two to account for orientation
+    let mut backward_neighbors: Vec<BTreeSet<NodeId>> =
+        vec![BTreeSet::new(); number_of_nodes * 2 + 1];
+    let mut digrams: IndexMap<(NodeId, NodeId), ColorSet> = IndexMap::new();
 
     let mut path_id_to_path_segment: HashMap<u64, PathSegment> = HashMap::new();
 
@@ -60,23 +91,44 @@ pub fn parse_gfa_paths_walks(
     let mut path_id = 0;
     while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
         if buf[0] == b'P' || buf[0] == b'W' {
-            let (path_seg, _) = match buf[0] {
+            let (path_seg, buf_path_seg) = match buf[0] {
                 b'P' => parse_path_identifier(&buf),
                 b'W' => parse_walk_identifier(&buf),
                 _ => unreachable!(),
             };
 
             match buf[0] {
-                b'P' => parse_path_seq(&buf, path_id, node_ids_by_name, &mut forward_neighbors, &mut backward_neighbors, &mut digrams),
-                b'W' => parse_walk_seq(&buf, path_id, node_ids_by_name, &mut forward_neighbors, &mut backward_neighbors, &mut digrams),
+                b'P' => parse_path_seq(
+                    buf_path_seg,
+                    path_id,
+                    node_ids_by_name,
+                    &mut forward_neighbors,
+                    &mut backward_neighbors,
+                    &mut digrams,
+                ),
+                b'W' => parse_walk_seq(
+                    buf_path_seg,
+                    path_id,
+                    node_ids_by_name,
+                    &mut forward_neighbors,
+                    &mut backward_neighbors,
+                    &mut digrams,
+                ),
                 _ => unreachable!(),
             }
             path_id_to_path_segment.insert(path_id, path_seg);
             path_id += 1;
         }
+        buf.clear();
     }
-    let digrams: BTreeMap<_, _> = digrams.into_iter().collect();
-    (forward_neighbors, backward_neighbors, digrams, path_id_to_path_segment)
+    let digrams: Vec<((NodeId, NodeId), ColorSet)> = digrams.into_iter().collect();
+    let digrams: PriorityQueue<_, _> = PriorityQueue::from(digrams);
+    (
+        forward_neighbors,
+        backward_neighbors,
+        digrams,
+        path_id_to_path_segment,
+    )
 }
 
 pub fn parse_path_seq(
@@ -85,8 +137,9 @@ pub fn parse_path_seq(
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
     forward_neighbors: &mut [BTreeSet<NodeId>],
     backward_neighbors: &mut [BTreeSet<NodeId>],
-    digrams: &mut HashMap<(NodeId, NodeId), ColorSet>,
+    digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
+    log::debug!("Parsing path: {}", path_id);
     let mut nodes_visited: HashMap<NodeId, usize> = HashMap::new();
     let mut it = data.iter();
     let end = it
@@ -99,31 +152,41 @@ pub fn parse_path_seq(
         .collect::<Vec<_>>()[0];
     let prev_node = prev_node.trim_ascii();
     let orientation = (prev_node[prev_node.len() - 1] == b'+') as NodeId;
-    let prev_node = node_ids_by_name[&prev_node[..prev_node.len()-1]];
+    let prev_node = node_ids_by_name[&prev_node[..prev_node.len() - 1]];
     let mut prev_node = (prev_node << 1) ^ orientation;
 
-    data[..end].split(|&x| x == b',').skip(1).for_each(|current_node| {
-        let current_node = current_node.trim_ascii();
-        let orientation = (current_node[current_node.len() - 1] == b'+') as NodeId;
-        let current_node = node_ids_by_name[&current_node[..current_node.len()-1]];
-        let current_node = (current_node << 1) ^ orientation;
+    data[..end]
+        .split(|&x| x == b',')
+        .skip(1)
+        .for_each(|current_node| {
+            let current_node = current_node.trim_ascii();
+            let orientation = (current_node[current_node.len() - 1] == b'+') as NodeId;
+            let current_node = node_ids_by_name[&current_node[..current_node.len() - 1]];
+            let current_node = (current_node << 1) ^ orientation;
 
-        nodes_visited.entry(current_node).and_modify(|counter| *counter += 1).or_insert(0);
-        let count = nodes_visited[&current_node];
+            nodes_visited
+                .entry(current_node)
+                .and_modify(|counter| *counter += 1)
+                .or_insert(0);
+            let count = nodes_visited[&current_node];
 
-        forward_neighbors[prev_node as usize].insert(current_node);
-        backward_neighbors[current_node as usize].insert(prev_node);
+            forward_neighbors[prev_node as usize].insert(current_node);
+            backward_neighbors[current_node as usize].insert(prev_node);
 
-        let current_path_id = (count as u64) << 32 ^ path_id;
+            let current_path_id = (count as u64) << 32 ^ path_id;
 
-        digrams.entry((prev_node, current_node)).and_modify(|c| { c.0.insert(current_path_id); }).or_insert(ColorSet(HashSet::from([current_path_id])));
+            digrams
+                .entry((prev_node, current_node))
+                .and_modify(|c| {
+                    c.0.insert(current_path_id);
+                })
+                .or_insert(ColorSet(HashSet::from([current_path_id])));
 
-        prev_node = current_node;
-    });
+            prev_node = current_node;
+        });
 
     log::debug!("parsing path sequences of size {} bytes..", end);
 }
-
 
 pub fn parse_walk_seq(
     data: &[u8],
@@ -131,7 +194,7 @@ pub fn parse_walk_seq(
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
     forward_neighbors: &mut [BTreeSet<NodeId>],
     backward_neighbors: &mut [BTreeSet<NodeId>],
-    digrams: &mut HashMap<(NodeId, NodeId), ColorSet>,
+    digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
     let mut nodes_visited: HashMap<NodeId, usize> = HashMap::new();
     let mut it = data.iter();
@@ -139,7 +202,8 @@ pub fn parse_walk_seq(
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
         .unwrap();
 
-    let prev_node = RE_WALK.captures_iter(&data[..end])
+    let prev_node = RE_WALK
+        .captures_iter(&data[..end])
         .take(1)
         .collect::<Vec<_>>();
     let orientation = (prev_node[0][1][0] == b'>') as NodeId;
@@ -151,7 +215,10 @@ pub fn parse_walk_seq(
         let current_node = node_ids_by_name[&m[2]];
         let current_node = (current_node << 1) ^ orientation;
 
-        nodes_visited.entry(current_node).and_modify(|counter| *counter += 1).or_insert(0);
+        nodes_visited
+            .entry(current_node)
+            .and_modify(|counter| *counter += 1)
+            .or_insert(0);
         let count = nodes_visited[&current_node];
 
         forward_neighbors[prev_node as usize].insert(current_node);
@@ -159,7 +226,12 @@ pub fn parse_walk_seq(
 
         let current_path_id = (count as u64) << 32 ^ path_id;
 
-        digrams.entry((prev_node, current_node)).and_modify(|c| { c.0.insert(current_path_id); }).or_insert(ColorSet(HashSet::from([current_path_id])));
+        digrams
+            .entry((prev_node, current_node))
+            .and_modify(|c| {
+                c.0.insert(current_path_id);
+            })
+            .or_insert(ColorSet(HashSet::from([current_path_id])));
 
         prev_node = current_node;
     });
@@ -211,13 +283,11 @@ pub fn parse_path_identifier(data: &[u8]) -> (PathSegment, &[u8]) {
     )
 }
 
-pub fn parse_node_ids(
-    gfa_file: &str,
-) -> HashMap<Vec<u8>, u64> {
+pub fn parse_node_ids(gfa_file: &str) -> HashMap<Vec<u8>, u64> {
     let mut node2id: HashMap<Vec<u8>, NodeId> = HashMap::default();
 
     log::info!("constructing indexes for node/edge IDs, node lengths, and P/W lines..");
-    let mut node_id = 1; // important: id must be > 0, otherwise counting procedure will produce errors
+    let mut node_id = 0; // important: id must be > 0, otherwise counting procedure will produce errors
 
     let mut buf = vec![];
     let mut data = bufreader_from_compressed_gfa(gfa_file);
@@ -227,7 +297,7 @@ pub fn parse_node_ids(
             let offset = iter.position(|&x| x == b'\t').unwrap();
             if node2id
                 .insert(buf[2..offset + 2].to_vec(), node_id)
-                    .is_some()
+                .is_some()
             {
                 panic!(
                     "Segment with ID {} occurs multiple times in GFA",
@@ -235,20 +305,69 @@ pub fn parse_node_ids(
                 )
             }
             node_id += 1;
-        }         buf.clear();
+        }
+        buf.clear();
     }
 
-    log::info!(
-        "found: {} nodes",
-        node2id.len()
-    );
+    log::info!("found: {} nodes", node2id.len());
     node2id
 }
 
-pub fn build_qlines(forward_neighbors: &mut [BTreeSet<NodeId>], backward_neighbors: &mut [BTreeSet<NodeId>], digrams: &mut BTreeMap<(NodeId, NodeId), ColorSet>) {
-    println!("{:?}", forward_neighbors);
-    println!("{:?}", backward_neighbors);
-    println!("{:?}", digrams);
+pub fn build_qlines(
+    forward_neighbors: &mut Vec<BTreeSet<NodeId>>,
+    backward_neighbors: &mut Vec<BTreeSet<NodeId>>,
+    digrams: &mut PriorityQueue<(NodeId, NodeId), ColorSet>,
+) -> (HashMap<NodeId, (NodeId, NodeId)>, NodeId) {
+    log::info!("Building qlines for {} digrams", digrams.len());
+    // println!("{:?}", digrams.clone().into_sorted_vec());
+    let offset = forward_neighbors.len() as NodeId;
+    let mut rules: HashMap<NodeId, (NodeId, NodeId)> = HashMap::new();
+
+    let mut current_max_node_id = offset;
+
+    while digrams.peek().expect("At least one digram").1 .0.len() >= MAX_OCCURENCES {
+        let ((u, v), uv_color_set) = digrams.pop().expect("At least one digram");
+        let non_terminal: NodeId = current_max_node_id;
+        current_max_node_id += 1;
+
+        backward_neighbors.push(backward_neighbors[u as usize].clone());
+        forward_neighbors.push(forward_neighbors[v as usize].clone());
+
+        // println!("{} -> {} | {}", non_terminal, u, v);
+        rules.insert(non_terminal, (u, v));
+        for w in &backward_neighbors[u as usize] {
+            forward_neighbors[*w as usize].insert(non_terminal);
+
+            let new_wq_set = digrams
+                .get_priority(&(*w, u))
+                .expect("w-u exists")
+                .intersection(&uv_color_set);
+            digrams.push((*w, non_terminal), new_wq_set);
+
+            let new_wu_set = digrams
+                .get_priority(&(*w, u))
+                .expect("w-u exists")
+                .difference(&uv_color_set);
+            digrams.change_priority(&(*w, u), new_wu_set);
+        }
+        for w in &forward_neighbors[v as usize] {
+            backward_neighbors[*w as usize].insert(non_terminal);
+
+            let new_qw_set = digrams
+                .get_priority(&(v, *w))
+                .expect("v-w exists")
+                .intersection(&uv_color_set);
+            digrams.push((non_terminal, *w), new_qw_set);
+
+            let new_vw_set = digrams
+                .get_priority(&(v, *w))
+                .expect("v-w exists")
+                .difference(&uv_color_set);
+            digrams.change_priority(&(v, *w), new_vw_set);
+        }
+        // println!("\t{:?}", digrams.clone().into_sorted_vec());
+    }
+    (rules, offset)
 }
 
 #[derive(Parser, Debug)]
@@ -260,9 +379,25 @@ struct Args {
 }
 
 fn main() {
+    env_logger::init();
     let args = Args::parse();
     let node_ids_by_name = parse_node_ids(&args.file);
-    let (mut forward_neighbors, mut backward_neigbors, mut digrams, path_id_to_path_segment) = parse_gfa_paths_walks(&args.file, &node_ids_by_name);
-    build_qlines(&mut forward_neighbors, &mut backward_neigbors, &mut digrams);
-    println!("Hello, world!");
+    let (mut forward_neighbors, mut backward_neigbors, mut digrams, _path_id_to_path_segment) =
+        parse_gfa_paths_walks(&args.file, &node_ids_by_name);
+    let (rules, offset) = build_qlines(&mut forward_neighbors, &mut backward_neigbors, &mut digrams);
+    let mut rules = rules.into_iter().collect::<Vec<_>>();
+    rules.sort_by_key(|r| r.0);
+    for (target, (x, y)) in rules {
+        let x_text = if x >= offset {
+            x.to_string()
+        } else {
+            format!("{}{}", (x >> 1) + 1, if x & 1 == 1 { "+" } else { "-" })
+        };
+        let y_text = if y >= offset {
+            y.to_string()
+        } else {
+            format!("{}{}", (y >> 1) + 1, if y & 1 == 1 { "+" } else { "-" })
+        };
+        println!("{} <- {} {}", target, x_text, y_text);
+    }
 }

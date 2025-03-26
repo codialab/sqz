@@ -1,8 +1,7 @@
-use regex::Regex;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use std::fmt;
 use std::str::FromStr;
-
 
 static PATHID_PANSN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^([^#]+)(#[^#]+)?(#[^#].*)?$").unwrap());
