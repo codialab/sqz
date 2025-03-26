@@ -89,6 +89,7 @@ impl PathSegment {
         res
     }
 
+    #[allow(dead_code)]
     pub fn from_str_start_end(s: &str, start: usize, end: usize) -> Self {
         let mut segment = Self::from_str(s);
         segment.start = Some(start);
@@ -119,6 +120,7 @@ impl PathSegment {
         }
     }
 
+    #[allow(dead_code)]
     pub fn clear_coords(&self) -> Self {
         Self {
             sample: self.sample.clone(),
