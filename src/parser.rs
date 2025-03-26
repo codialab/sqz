@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use priority_queue::PriorityQueue;
 use regex::bytes::Regex;
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     io::{BufRead, BufReader, Read},
 };
 
@@ -53,8 +53,8 @@ pub fn parse_gfa_paths_walks(
     let mut data = bufreader_from_compressed_gfa(gfa_file);
 
     let number_of_nodes = node_ids_by_name.len();
-    let mut neighbors: Vec<BTreeSet<NodeId>> =
-        vec![BTreeSet::new(); number_of_nodes * 2 + 1]; // Multiply by two to account for orientation
+    let mut neighbors: NeighborList =
+        vec![Vec::new(); number_of_nodes * 2 + 1]; // Multiply by two to account for orientation
     let mut digrams: IndexMap<(NodeId, NodeId), ColorSet> = IndexMap::new();
 
     let mut path_id_to_path_segment: HashMap<u64, PathSegment> = HashMap::new();
@@ -104,7 +104,7 @@ pub fn parse_path_seq(
     data: &[u8],
     path_id: u64,
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
-    neighbors: &mut [BTreeSet<NodeId>],
+    neighbors: &mut NeighborList,
     digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
     log::debug!("Parsing path: {}", path_id);
@@ -146,8 +146,8 @@ pub fn parse_path_seq(
             let (first_node, second_node) = canonize(prev_node, current_node);
             let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-            neighbors[first_node as usize].insert(second_node);
-            neighbors[flipped_first_node as usize].insert(flipped_second_node);
+            neighbors[first_node as usize].push(second_node);
+            neighbors[flipped_first_node as usize].push(flipped_second_node);
 
             let current_path_id = (count as u64) << 32 ^ path_id;
 
@@ -168,7 +168,7 @@ pub fn parse_walk_seq(
     data: &[u8],
     path_id: u64,
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
-    neighbors: &mut [BTreeSet<NodeId>],
+    neighbors: &mut NeighborList,
     digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
     let mut nodes_visited: HashMap<NodeId, usize> = HashMap::new();
@@ -204,8 +204,8 @@ pub fn parse_walk_seq(
         let (first_node, second_node) = canonize(prev_node, current_node);
         let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-        neighbors[first_node as usize].insert(second_node);
-        neighbors[flipped_first_node as usize].insert(flipped_second_node);
+        neighbors[first_node as usize].push(second_node);
+        neighbors[flipped_first_node as usize].push(flipped_second_node);
 
         let second_path_id = (count as u64) << 32 ^ path_id;
 

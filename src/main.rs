@@ -3,13 +3,13 @@ mod parser;
 
 use clap::Parser;
 use priority_queue::PriorityQueue;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use parser::{parse_node_ids, parse_gfa_paths_walks, canonize};
 
 const MAX_OCCURENCES: usize = 2;
 
 type NodeId = u64;
-type NeighborList = Vec<BTreeSet<NodeId>>;
+type NeighborList = Vec<Vec<NodeId>>;
 type Digrams = PriorityQueue<(NodeId, NodeId), ColorSet>;
 type Rules = HashMap<NodeId, (NodeId, NodeId)>;
 
@@ -31,8 +31,8 @@ impl ColorSet {
         ColorSet(self.0.difference(&other.0).copied().collect::<HashSet<_>>())
     }
 
-    fn is_disjoint(&self, other: &ColorSet) -> bool {
-        self.0.is_disjoint(&other.0)
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -77,8 +77,8 @@ fn flip(x: NodeId) -> NodeId {
 }
 
 pub fn build_qlines(
-    neighbors: &mut Vec<BTreeSet<NodeId>>,
-    digrams: &mut PriorityQueue<(NodeId, NodeId), ColorSet>,
+    neighbors: &mut NeighborList,
+    digrams: &mut Digrams,
 ) -> (Rules, NodeId) {
     log::info!("Building qlines for {} digrams", digrams.len());
     println!("D: {:?}", digrams.clone().into_sorted_vec());
@@ -97,48 +97,54 @@ pub fn build_qlines(
         let non_terminal: NodeId = current_max_node_id;
         current_max_node_id += 2;
 
-        // neighbors.push(neighbors[v as usize].iter()
-        //                .filter(|n| !digrams.get_priority(&canonize(v, n)).expect("v-n exists").is_disjoint(&uv_color_set)).collect::<BTreeSet<_>>());
-        // neighbors.push(neighbors[flip(u) as usize].clone());
-
-        // println!("{} -> {} | {}", non_terminal, u, v);
         rules.insert(non_terminal, (u, v));
+
+        // First store all insertion/deletions that are done later to avoid
+        // having to read an mutate neighbors at the same time
+        let mut neighbors_to_insert: Vec<(NodeId, NodeId)> = Vec::new();
+        let mut neighbors_to_remove: Vec<(NodeId, NodeId)> = Vec::new();
         for n in &neighbors[v as usize] {
-            // TODO check if invalid neighbor (i.e. intersection is empty)
+            let qn_set = digrams.get_priority(&canonize(v, *n)).expect("v-n exists").intersection(&uv_color_set);
+            if qn_set.is_empty() {
+                continue;
+            }
+            digrams.push(canonize(non_terminal, *n), qn_set);
+
+            let vn_set = digrams.get_priority(&canonize(v, *n)).expect("v-n exists").difference(&uv_color_set);
+            if vn_set.is_empty() {
+                neighbors_to_remove.push((v, *n));
+                neighbors_to_remove.push((flip(*n), flip(v)));
+            }
+            digrams.change_priority(&canonize(v, *n), vn_set);
 
             // <n += <(u>v>)
-            neighbors[flip(*n) as usize].insert(flip(non_terminal));
-
-            println!("Working on w: {}", w);
-            println!("\tNf: {:?}", neighbors);
-
-            let new_qw_set = digrams
-                .get_priority(&canonize(*w, u))
-                .expect("w-u exists")
-                .intersection(&uv_color_set);
-            digrams.push((*w, non_terminal), new_wq_set);
-
-            let new_wu_set = digrams
-                .get_priority(&(*w, u))
-                .expect("w-u exists")
-                .difference(&uv_color_set);
-            digrams.change_priority(&(*w, u), new_wu_set);
+            neighbors_to_insert.push((flip(*n), flip(non_terminal)));
+            neighbors_to_insert.push((non_terminal, *n));
         }
-        for w in &neighbors[flip(u) as usize] {
-            backward_neighbors[*w as usize].insert(non_terminal);
+        for n in neighbors.get(flip(u) as usize).unwrap() {
+            let nq_set = digrams.get_priority(&canonize(*n, u)).expect("n-u exists").intersection(&uv_color_set);
+            if nq_set.is_empty() {
+                continue;
+            }
+            digrams.push(canonize(*n, non_terminal), nq_set);
 
-            let new_qw_set = digrams
-                .get_priority(&(v, *w))
-                .expect("v-w exists")
-                .intersection(&uv_color_set);
-            digrams.push((non_terminal, *w), new_qw_set);
+            let nu_set = digrams.get_priority(&canonize(*n, u)).expect("n-u exists").difference(&uv_color_set);
+            if nu_set.is_empty() {
+                neighbors_to_remove.push((*n, u));
+                neighbors_to_remove.push((flip(u), flip(*n)));
+            }
+            digrams.change_priority(&canonize(*n, u), nu_set);
 
-            let new_vw_set = digrams
-                .get_priority(&(v, *w))
-                .expect("v-w exists")
-                .difference(&uv_color_set);
-            digrams.change_priority(&(v, *w), new_vw_set);
+            neighbors_to_insert.push((*n, non_terminal));
+            neighbors_to_insert.push((flip(non_terminal), flip(*n)));
         }
+        neighbors_to_insert.into_iter().for_each(|(key, value)| {
+            neighbors[key as usize].push(value);
+        });
+        neighbors_to_remove.into_iter().for_each(|(key, value)| {
+            let idx = neighbors[key as usize].iter().position(|x| *x == value).expect("can remove neighbor");
+            neighbors[key as usize].swap_remove(idx);
+        });
         // println!("\t{:?}", digrams.clone().into_sorted_vec());
     }
 
@@ -163,7 +169,7 @@ fn main() {
     let (mut neighbors, mut digrams, _path_id_to_path_segment) =
         parse_gfa_paths_walks(&args.file, &node_ids_by_name);
     let (rules, offset) =
-        build_qlines(&mut forward_neighbors, &mut backward_neigbors, &mut digrams);
+        build_qlines(&mut neighbors, &mut digrams);
     let mut rules = rules.into_iter().collect::<Vec<_>>();
     rules.sort_by_key(|r| r.0);
     for (target, (x, y)) in rules {
