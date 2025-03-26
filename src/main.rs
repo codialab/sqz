@@ -3,6 +3,7 @@ mod path_segment;
 use clap::Parser;
 use core::str;
 use flate2::read::MultiGzDecoder;
+use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use path_segment::PathSegment;
 use priority_queue::PriorityQueue;
@@ -12,13 +13,13 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     io::{BufRead, BufReader, Read},
 };
-use indexmap::IndexMap;
 
 const MAX_OCCURENCES: usize = 2;
 
 type NodeId = u64;
 type NeighborList = Vec<BTreeSet<NodeId>>;
 type Digrams = PriorityQueue<(NodeId, NodeId), ColorSet>;
+type Rules = HashMap<NodeId, (NodeId, NodeId)>;
 
 lazy_static! {
     static ref RE_WALK: Regex = Regex::new(r"([><])([!-;=?-~]+)").unwrap();
@@ -64,6 +65,14 @@ pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>>
         Box::new(f)
     };
     BufReader::new(reader)
+}
+
+fn canonize_digram(x: NodeId, y: NodeId) -> (NodeId, NodeId) {
+    if x > y || (x >> 1 == y >> 1 && x & 1 == 0) {
+        (y ^ 1, x ^ 1)
+    } else {
+        (x, y)
+    }
 }
 
 pub fn parse_gfa_paths_walks(
@@ -153,6 +162,9 @@ pub fn parse_path_seq(
     let prev_node = prev_node.trim_ascii();
     let orientation = (prev_node[prev_node.len() - 1] == b'+') as NodeId;
     let prev_node = node_ids_by_name[&prev_node[..prev_node.len() - 1]];
+
+    // Set the counter before setting the orientation to not take the orientation into account
+    nodes_visited.insert(prev_node, 0);
     let mut prev_node = (prev_node << 1) ^ orientation;
 
     data[..end]
@@ -162,21 +174,25 @@ pub fn parse_path_seq(
             let current_node = current_node.trim_ascii();
             let orientation = (current_node[current_node.len() - 1] == b'+') as NodeId;
             let current_node = node_ids_by_name[&current_node[..current_node.len() - 1]];
-            let current_node = (current_node << 1) ^ orientation;
 
+            // Set the counter before setting the orientation to not take the orientation into account
             nodes_visited
                 .entry(current_node)
                 .and_modify(|counter| *counter += 1)
                 .or_insert(0);
             let count = nodes_visited[&current_node];
 
-            forward_neighbors[prev_node as usize].insert(current_node);
-            backward_neighbors[current_node as usize].insert(prev_node);
+            let current_node = (current_node << 1) ^ orientation;
+
+            let (first_node, second_node) = canonize_digram(prev_node, current_node);
+
+            forward_neighbors[first_node as usize].insert(second_node);
+            backward_neighbors[second_node as usize].insert(first_node);
 
             let current_path_id = (count as u64) << 32 ^ path_id;
 
             digrams
-                .entry((prev_node, current_node))
+                .entry((first_node, second_node))
                 .and_modify(|c| {
                     c.0.insert(current_path_id);
                 })
@@ -208,30 +224,37 @@ pub fn parse_walk_seq(
         .collect::<Vec<_>>();
     let orientation = (prev_node[0][1][0] == b'>') as NodeId;
     let prev_node = node_ids_by_name[&prev_node[0][2]];
+
+    // Set the counter before setting the orientation to not take the orientation into account
+    nodes_visited.insert(prev_node, 0);
     let mut prev_node = (prev_node << 1) | orientation;
 
     RE_WALK.captures_iter(&data[..end]).skip(1).for_each(|m| {
         let orientation = (m[1][0] == b'>') as NodeId;
         let current_node = node_ids_by_name[&m[2]];
-        let current_node = (current_node << 1) ^ orientation;
 
+        // Set the counter before setting the orientation to not take the orientation into account
         nodes_visited
             .entry(current_node)
             .and_modify(|counter| *counter += 1)
             .or_insert(0);
         let count = nodes_visited[&current_node];
 
-        forward_neighbors[prev_node as usize].insert(current_node);
-        backward_neighbors[current_node as usize].insert(prev_node);
+        let current_node = (current_node << 1) ^ orientation;
 
-        let current_path_id = (count as u64) << 32 ^ path_id;
+        let (first_node, second_node) = canonize_digram(prev_node, current_node);
+
+        forward_neighbors[first_node as usize].insert(second_node);
+        backward_neighbors[second_node as usize].insert(first_node);
+
+        let second_path_id = (count as u64) << 32 ^ path_id;
 
         digrams
-            .entry((prev_node, current_node))
+            .entry((first_node, second_node))
             .and_modify(|c| {
-                c.0.insert(current_path_id);
+                c.0.insert(second_path_id);
             })
-            .or_insert(ColorSet(HashSet::from([current_path_id])));
+            .or_insert(ColorSet(HashSet::from([second_path_id])));
 
         prev_node = current_node;
     });
@@ -313,20 +336,50 @@ pub fn parse_node_ids(gfa_file: &str) -> HashMap<Vec<u8>, u64> {
     node2id
 }
 
+fn decompress_non_terminal_node(x: NodeId, offset: NodeId) -> NodeId {
+    if x >= offset {
+        (x - offset << 1) + offset
+    } else {
+        x
+    }
+}
+
+fn decompress_non_terminals(rules: Rules, offset: NodeId) -> Rules {
+    rules
+        .into_iter()
+        .map(|(k, (v1, v2))| {
+            (
+                decompress_non_terminal_node(k, offset),
+                (
+                    decompress_non_terminal_node(v1, offset),
+                    decompress_non_terminal_node(v2, offset),
+                ),
+            )
+        })
+        .collect()
+}
+
 pub fn build_qlines(
     forward_neighbors: &mut Vec<BTreeSet<NodeId>>,
     backward_neighbors: &mut Vec<BTreeSet<NodeId>>,
     digrams: &mut PriorityQueue<(NodeId, NodeId), ColorSet>,
-) -> (HashMap<NodeId, (NodeId, NodeId)>, NodeId) {
+) -> (Rules, NodeId) {
     log::info!("Building qlines for {} digrams", digrams.len());
-    // println!("{:?}", digrams.clone().into_sorted_vec());
+    println!("D: {:?}", digrams.clone().into_sorted_vec());
+    println!("Nf: {:?}", forward_neighbors);
+    println!("Nb: {:?}", backward_neighbors);
     let offset = forward_neighbors.len() as NodeId;
-    let mut rules: HashMap<NodeId, (NodeId, NodeId)> = HashMap::new();
+    println!("offset: {}", offset);
+    let mut rules: Rules = HashMap::new();
 
     let mut current_max_node_id = offset;
 
     while digrams.peek().expect("At least one digram").1 .0.len() >= MAX_OCCURENCES {
         let ((u, v), uv_color_set) = digrams.pop().expect("At least one digram");
+        println!("Working on digram: {}-{}", u, v);
+        println!("\tD: {:?}", digrams.clone().into_sorted_vec());
+        println!("\tNf: {:?}", forward_neighbors);
+        println!("\tNb: {:?}", backward_neighbors);
         let non_terminal: NodeId = current_max_node_id;
         current_max_node_id += 1;
 
@@ -337,6 +390,10 @@ pub fn build_qlines(
         rules.insert(non_terminal, (u, v));
         for w in &backward_neighbors[u as usize] {
             forward_neighbors[*w as usize].insert(non_terminal);
+
+            println!("Working on w: {}", w);
+            println!("\tNf: {:?}", forward_neighbors);
+            println!("\tNb: {:?}", backward_neighbors);
 
             let new_wq_set = digrams
                 .get_priority(&(*w, u))
@@ -367,6 +424,10 @@ pub fn build_qlines(
         }
         // println!("\t{:?}", digrams.clone().into_sorted_vec());
     }
+
+    // Reintroduce space into non-terminal node ids for reverse non-terminals
+    let rules = decompress_non_terminals(rules, offset);
+
     (rules, offset)
 }
 
@@ -384,7 +445,8 @@ fn main() {
     let node_ids_by_name = parse_node_ids(&args.file);
     let (mut forward_neighbors, mut backward_neigbors, mut digrams, _path_id_to_path_segment) =
         parse_gfa_paths_walks(&args.file, &node_ids_by_name);
-    let (rules, offset) = build_qlines(&mut forward_neighbors, &mut backward_neigbors, &mut digrams);
+    let (rules, offset) =
+        build_qlines(&mut forward_neighbors, &mut backward_neigbors, &mut digrams);
     let mut rules = rules.into_iter().collect::<Vec<_>>();
     rules.sort_by_key(|r| r.0);
     for (target, (x, y)) in rules {
