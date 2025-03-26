@@ -29,7 +29,7 @@ pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>>
     BufReader::new(reader)
 }
 
-fn canonize_digram(x: NodeId, y: NodeId) -> (NodeId, NodeId) {
+pub fn canonize(x: NodeId, y: NodeId) -> (NodeId, NodeId) {
     if x > y || (x >> 1 == y >> 1 && x & 1 == 0) {
         (y ^ 1, x ^ 1)
     } else {
@@ -37,11 +37,14 @@ fn canonize_digram(x: NodeId, y: NodeId) -> (NodeId, NodeId) {
     }
 }
 
+fn flip_digram(x: NodeId, y: NodeId) -> (NodeId, NodeId) {
+    (y ^ 1, x ^ 1)
+}
+
 pub fn parse_gfa_paths_walks(
     gfa_file: &str,
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
 ) -> (
-    NeighborList,
     NeighborList,
     Digrams,
     HashMap<u64, PathSegment>,
@@ -50,10 +53,8 @@ pub fn parse_gfa_paths_walks(
     let mut data = bufreader_from_compressed_gfa(gfa_file);
 
     let number_of_nodes = node_ids_by_name.len();
-    let mut forward_neighbors: Vec<BTreeSet<NodeId>> =
+    let mut neighbors: Vec<BTreeSet<NodeId>> =
         vec![BTreeSet::new(); number_of_nodes * 2 + 1]; // Multiply by two to account for orientation
-    let mut backward_neighbors: Vec<BTreeSet<NodeId>> =
-        vec![BTreeSet::new(); number_of_nodes * 2 + 1];
     let mut digrams: IndexMap<(NodeId, NodeId), ColorSet> = IndexMap::new();
 
     let mut path_id_to_path_segment: HashMap<u64, PathSegment> = HashMap::new();
@@ -73,16 +74,14 @@ pub fn parse_gfa_paths_walks(
                     buf_path_seg,
                     path_id,
                     node_ids_by_name,
-                    &mut forward_neighbors,
-                    &mut backward_neighbors,
+                    &mut neighbors,
                     &mut digrams,
                 ),
                 b'W' => parse_walk_seq(
                     buf_path_seg,
                     path_id,
                     node_ids_by_name,
-                    &mut forward_neighbors,
-                    &mut backward_neighbors,
+                    &mut neighbors,
                     &mut digrams,
                 ),
                 _ => unreachable!(),
@@ -95,8 +94,7 @@ pub fn parse_gfa_paths_walks(
     let digrams: Vec<((NodeId, NodeId), ColorSet)> = digrams.into_iter().collect();
     let digrams: PriorityQueue<_, _> = PriorityQueue::from(digrams);
     (
-        forward_neighbors,
-        backward_neighbors,
+        neighbors,
         digrams,
         path_id_to_path_segment,
     )
@@ -106,8 +104,7 @@ pub fn parse_path_seq(
     data: &[u8],
     path_id: u64,
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
-    forward_neighbors: &mut [BTreeSet<NodeId>],
-    backward_neighbors: &mut [BTreeSet<NodeId>],
+    neighbors: &mut [BTreeSet<NodeId>],
     digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
     log::debug!("Parsing path: {}", path_id);
@@ -134,7 +131,7 @@ pub fn parse_path_seq(
         .skip(1)
         .for_each(|current_node| {
             let current_node = current_node.trim_ascii();
-            let orientation = (current_node[current_node.len() - 1] == b'+') as NodeId;
+            let orientation = (current_node[current_node.len() - 1] != b'+') as NodeId;
             let current_node = node_ids_by_name[&current_node[..current_node.len() - 1]];
 
             // Set the counter before setting the orientation to not take the orientation into account
@@ -146,10 +143,11 @@ pub fn parse_path_seq(
 
             let current_node = (current_node << 1) ^ orientation;
 
-            let (first_node, second_node) = canonize_digram(prev_node, current_node);
+            let (first_node, second_node) = canonize(prev_node, current_node);
+            let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-            forward_neighbors[first_node as usize].insert(second_node);
-            backward_neighbors[second_node as usize].insert(first_node);
+            neighbors[first_node as usize].insert(second_node);
+            neighbors[flipped_first_node as usize].insert(flipped_second_node);
 
             let current_path_id = (count as u64) << 32 ^ path_id;
 
@@ -170,8 +168,7 @@ pub fn parse_walk_seq(
     data: &[u8],
     path_id: u64,
     node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
-    forward_neighbors: &mut [BTreeSet<NodeId>],
-    backward_neighbors: &mut [BTreeSet<NodeId>],
+    neighbors: &mut [BTreeSet<NodeId>],
     digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
     let mut nodes_visited: HashMap<NodeId, usize> = HashMap::new();
@@ -192,7 +189,7 @@ pub fn parse_walk_seq(
     let mut prev_node = (prev_node << 1) | orientation;
 
     RE_WALK.captures_iter(&data[..end]).skip(1).for_each(|m| {
-        let orientation = (m[1][0] == b'>') as NodeId;
+        let orientation = (m[1][0] != b'>') as NodeId;
         let current_node = node_ids_by_name[&m[2]];
 
         // Set the counter before setting the orientation to not take the orientation into account
@@ -204,10 +201,11 @@ pub fn parse_walk_seq(
 
         let current_node = (current_node << 1) ^ orientation;
 
-        let (first_node, second_node) = canonize_digram(prev_node, current_node);
+        let (first_node, second_node) = canonize(prev_node, current_node);
+        let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-        forward_neighbors[first_node as usize].insert(second_node);
-        backward_neighbors[second_node as usize].insert(first_node);
+        neighbors[first_node as usize].insert(second_node);
+        neighbors[flipped_first_node as usize].insert(flipped_second_node);
 
         let second_path_id = (count as u64) << 32 ^ path_id;
 

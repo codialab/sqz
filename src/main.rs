@@ -4,7 +4,7 @@ mod parser;
 use clap::Parser;
 use priority_queue::PriorityQueue;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use parser::{parse_node_ids, parse_gfa_paths_walks};
+use parser::{parse_node_ids, parse_gfa_paths_walks, canonize};
 
 const MAX_OCCURENCES: usize = 2;
 
@@ -29,6 +29,10 @@ impl ColorSet {
 
     fn difference(&self, other: &ColorSet) -> ColorSet {
         ColorSet(self.0.difference(&other.0).copied().collect::<HashSet<_>>())
+    }
+
+    fn is_disjoint(&self, other: &ColorSet) -> bool {
+        self.0.is_disjoint(&other.0)
     }
 }
 
@@ -68,16 +72,18 @@ fn decompress_non_terminals(rules: Rules, offset: NodeId) -> Rules {
         .collect()
 }
 
+fn flip(x: NodeId) -> NodeId {
+    x ^ 1
+}
+
 pub fn build_qlines(
-    forward_neighbors: &mut Vec<BTreeSet<NodeId>>,
-    backward_neighbors: &mut Vec<BTreeSet<NodeId>>,
+    neighbors: &mut Vec<BTreeSet<NodeId>>,
     digrams: &mut PriorityQueue<(NodeId, NodeId), ColorSet>,
 ) -> (Rules, NodeId) {
     log::info!("Building qlines for {} digrams", digrams.len());
     println!("D: {:?}", digrams.clone().into_sorted_vec());
-    println!("Nf: {:?}", forward_neighbors);
-    println!("Nb: {:?}", backward_neighbors);
-    let offset = forward_neighbors.len() as NodeId;
+    println!("N: {:?}", neighbors);
+    let offset = neighbors.len() as NodeId;
     println!("offset: {}", offset);
     let mut rules: Rules = HashMap::new();
 
@@ -87,25 +93,27 @@ pub fn build_qlines(
         let ((u, v), uv_color_set) = digrams.pop().expect("At least one digram");
         println!("Working on digram: {}-{}", u, v);
         println!("\tD: {:?}", digrams.clone().into_sorted_vec());
-        println!("\tNf: {:?}", forward_neighbors);
-        println!("\tNb: {:?}", backward_neighbors);
+        println!("\tN: {:?}", neighbors);
         let non_terminal: NodeId = current_max_node_id;
-        current_max_node_id += 1;
+        current_max_node_id += 2;
 
-        backward_neighbors.push(backward_neighbors[u as usize].clone());
-        forward_neighbors.push(forward_neighbors[v as usize].clone());
+        // neighbors.push(neighbors[v as usize].iter()
+        //                .filter(|n| !digrams.get_priority(&canonize(v, n)).expect("v-n exists").is_disjoint(&uv_color_set)).collect::<BTreeSet<_>>());
+        // neighbors.push(neighbors[flip(u) as usize].clone());
 
         // println!("{} -> {} | {}", non_terminal, u, v);
         rules.insert(non_terminal, (u, v));
-        for w in &backward_neighbors[u as usize] {
-            forward_neighbors[*w as usize].insert(non_terminal);
+        for n in &neighbors[v as usize] {
+            // TODO check if invalid neighbor (i.e. intersection is empty)
+
+            // <n += <(u>v>)
+            neighbors[flip(*n) as usize].insert(flip(non_terminal));
 
             println!("Working on w: {}", w);
-            println!("\tNf: {:?}", forward_neighbors);
-            println!("\tNb: {:?}", backward_neighbors);
+            println!("\tNf: {:?}", neighbors);
 
-            let new_wq_set = digrams
-                .get_priority(&(*w, u))
+            let new_qw_set = digrams
+                .get_priority(&canonize(*w, u))
                 .expect("w-u exists")
                 .intersection(&uv_color_set);
             digrams.push((*w, non_terminal), new_wq_set);
@@ -116,7 +124,7 @@ pub fn build_qlines(
                 .difference(&uv_color_set);
             digrams.change_priority(&(*w, u), new_wu_set);
         }
-        for w in &forward_neighbors[v as usize] {
+        for w in &neighbors[flip(u) as usize] {
             backward_neighbors[*w as usize].insert(non_terminal);
 
             let new_qw_set = digrams
@@ -152,7 +160,7 @@ fn main() {
     env_logger::init();
     let args = Args::parse();
     let node_ids_by_name = parse_node_ids(&args.file);
-    let (mut forward_neighbors, mut backward_neigbors, mut digrams, _path_id_to_path_segment) =
+    let (mut neighbors, mut digrams, _path_id_to_path_segment) =
         parse_gfa_paths_walks(&args.file, &node_ids_by_name);
     let (rules, offset) =
         build_qlines(&mut forward_neighbors, &mut backward_neigbors, &mut digrams);
