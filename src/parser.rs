@@ -3,7 +3,7 @@ use flate2::read::MultiGzDecoder;
 use indexmap::IndexMap;
 use crate::path_segment::PathSegment;
 use std::str::FromStr;
-use crate::{NodeId, NeighborList, Digrams, ColorSet};
+use crate::{NodeId, NeighborList, Digrams, ColorSet, RawNodeId};
 
 use lazy_static::lazy_static;
 use priority_queue::PriorityQueue;
@@ -30,20 +30,20 @@ pub fn bufreader_from_compressed_gfa(gfa_file: &str) -> BufReader<Box<dyn Read>>
 }
 
 pub fn canonize(x: NodeId, y: NodeId) -> (NodeId, NodeId) {
-    if x > y || (x >> 1 == y >> 1 && x & 1 == 0) {
-        (y ^ 1, x ^ 1)
+    if x > y || (x.get_id() == y.get_id() && x.get_orientation() == 0) {
+        (y.flip(), x.flip())
     } else {
         (x, y)
     }
 }
 
 fn flip_digram(x: NodeId, y: NodeId) -> (NodeId, NodeId) {
-    (y ^ 1, x ^ 1)
+    (y.flip(), x.flip())
 }
 
 pub fn parse_gfa_paths_walks(
     gfa_file: &str,
-    node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
+    node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
 ) -> (
     NeighborList,
     Digrams,
@@ -54,7 +54,7 @@ pub fn parse_gfa_paths_walks(
 
     let number_of_nodes = node_ids_by_name.len();
     let mut neighbors: NeighborList =
-        vec![Vec::new(); number_of_nodes * 2 + 1]; // Multiply by two to account for orientation
+        vec![HashSet::new(); number_of_nodes * 2]; // Multiply by two to account for orientation
     let mut digrams: IndexMap<(NodeId, NodeId), ColorSet> = IndexMap::new();
 
     let mut path_id_to_path_segment: HashMap<u64, PathSegment> = HashMap::new();
@@ -103,12 +103,12 @@ pub fn parse_gfa_paths_walks(
 pub fn parse_path_seq(
     data: &[u8],
     path_id: u64,
-    node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
+    node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
     neighbors: &mut NeighborList,
     digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
     log::debug!("Parsing path: {}", path_id);
-    let mut nodes_visited: HashMap<NodeId, usize> = HashMap::new();
+    let mut nodes_visited: HashMap<RawNodeId, usize> = HashMap::new();
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
@@ -119,19 +119,19 @@ pub fn parse_path_seq(
         .take(1)
         .collect::<Vec<_>>()[0];
     let prev_node = prev_node.trim_ascii();
-    let orientation = (prev_node[prev_node.len() - 1] == b'+') as NodeId;
+    let orientation = (prev_node[prev_node.len() - 1] != b'+') as u64;
     let prev_node = node_ids_by_name[&prev_node[..prev_node.len() - 1]];
 
     // Set the counter before setting the orientation to not take the orientation into account
     nodes_visited.insert(prev_node, 0);
-    let mut prev_node = (prev_node << 1) ^ orientation;
+    let mut prev_node = NodeId::new(prev_node, orientation);
 
     data[..end]
         .split(|&x| x == b',')
         .skip(1)
         .for_each(|current_node| {
             let current_node = current_node.trim_ascii();
-            let orientation = (current_node[current_node.len() - 1] != b'+') as NodeId;
+            let orientation = (current_node[current_node.len() - 1] != b'+') as u64;
             let current_node = node_ids_by_name[&current_node[..current_node.len() - 1]];
 
             // Set the counter before setting the orientation to not take the orientation into account
@@ -141,18 +141,20 @@ pub fn parse_path_seq(
                 .or_insert(0);
             let count = nodes_visited[&current_node];
 
-            let current_node = (current_node << 1) ^ orientation;
+            let current_node = NodeId::new(current_node, orientation);
 
-            let (first_node, second_node) = canonize(prev_node, current_node);
+            let (first_node, second_node) = (prev_node, current_node);
             let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-            neighbors[first_node as usize].push(second_node);
-            neighbors[flipped_first_node as usize].push(flipped_second_node);
+            println!("inserting {}->{} | {}->{}", first_node, second_node, flipped_first_node, flipped_second_node);
+
+            neighbors[first_node.get_idx()].insert(second_node);
+            neighbors[flipped_first_node.get_idx()].insert(flipped_second_node);
 
             let current_path_id = (count as u64) << 32 ^ path_id;
 
             digrams
-                .entry((first_node, second_node))
+                .entry(canonize(first_node, second_node))
                 .and_modify(|c| {
                     c.0.insert(current_path_id);
                 })
@@ -167,11 +169,11 @@ pub fn parse_path_seq(
 pub fn parse_walk_seq(
     data: &[u8],
     path_id: u64,
-    node_ids_by_name: &HashMap<Vec<u8>, NodeId>,
+    node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
     neighbors: &mut NeighborList,
     digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
-    let mut nodes_visited: HashMap<NodeId, usize> = HashMap::new();
+    let mut nodes_visited: HashMap<RawNodeId, usize> = HashMap::new();
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
@@ -181,15 +183,15 @@ pub fn parse_walk_seq(
         .captures_iter(&data[..end])
         .take(1)
         .collect::<Vec<_>>();
-    let orientation = (prev_node[0][1][0] == b'>') as NodeId;
+    let orientation = (prev_node[0][1][0] == b'>') as u64;
     let prev_node = node_ids_by_name[&prev_node[0][2]];
 
     // Set the counter before setting the orientation to not take the orientation into account
     nodes_visited.insert(prev_node, 0);
-    let mut prev_node = (prev_node << 1) | orientation;
+    let mut prev_node = NodeId::new(prev_node, orientation);
 
     RE_WALK.captures_iter(&data[..end]).skip(1).for_each(|m| {
-        let orientation = (m[1][0] != b'>') as NodeId;
+        let orientation = (m[1][0] != b'>') as u64;
         let current_node = node_ids_by_name[&m[2]];
 
         // Set the counter before setting the orientation to not take the orientation into account
@@ -199,18 +201,18 @@ pub fn parse_walk_seq(
             .or_insert(0);
         let count = nodes_visited[&current_node];
 
-        let current_node = (current_node << 1) ^ orientation;
+        let current_node = NodeId::new(current_node, orientation);
 
-        let (first_node, second_node) = canonize(prev_node, current_node);
+        let (first_node, second_node) = (prev_node, current_node);
         let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-        neighbors[first_node as usize].push(second_node);
-        neighbors[flipped_first_node as usize].push(flipped_second_node);
+        neighbors[first_node.get_idx()].insert(second_node);
+        neighbors[flipped_first_node.get_idx()].insert(flipped_second_node);
 
         let second_path_id = (count as u64) << 32 ^ path_id;
 
         digrams
-            .entry((first_node, second_node))
+            .entry(canonize(first_node, second_node))
             .and_modify(|c| {
                 c.0.insert(second_path_id);
             })
@@ -266,8 +268,8 @@ pub fn parse_path_identifier(data: &[u8]) -> (PathSegment, &[u8]) {
     )
 }
 
-pub fn parse_node_ids(gfa_file: &str) -> HashMap<Vec<u8>, u64> {
-    let mut node2id: HashMap<Vec<u8>, NodeId> = HashMap::default();
+pub fn parse_node_ids(gfa_file: &str) -> HashMap<Vec<u8>, RawNodeId> {
+    let mut node2id: HashMap<Vec<u8>, RawNodeId> = HashMap::default();
 
     log::info!("constructing indexes for node/edge IDs, node lengths, and P/W lines..");
     let mut node_id = 0; // important: id must be > 0, otherwise counting procedure will produce errors
