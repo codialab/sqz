@@ -1,9 +1,9 @@
+use crate::path_segment::PathSegment;
+use crate::{ColorSet, Digrams, NeighborList, NodeId, RawNodeId};
 use core::str;
 use flate2::read::MultiGzDecoder;
 use indexmap::IndexMap;
-use crate::path_segment::PathSegment;
 use std::str::FromStr;
-use crate::{NodeId, NeighborList, Digrams, ColorSet, RawNodeId};
 
 use lazy_static::lazy_static;
 use priority_queue::PriorityQueue;
@@ -44,17 +44,12 @@ fn flip_digram(x: NodeId, y: NodeId) -> (NodeId, NodeId) {
 pub fn parse_gfa_paths_walks(
     gfa_file: &str,
     node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
-) -> (
-    NeighborList,
-    Digrams,
-    HashMap<u64, PathSegment>,
-) {
+) -> (NeighborList, Digrams, HashMap<u64, PathSegment>) {
     log::info!("parsing path + walk sequences");
     let mut data = bufreader_from_compressed_gfa(gfa_file);
 
     let number_of_nodes = node_ids_by_name.len();
-    let mut neighbors: NeighborList =
-        vec![HashSet::new(); number_of_nodes * 2]; // Multiply by two to account for orientation
+    let mut neighbors: NeighborList = vec![HashSet::new(); number_of_nodes * 2]; // Multiply by two to account for orientation
     let mut digrams: IndexMap<(NodeId, NodeId), ColorSet> = IndexMap::new();
 
     let mut path_id_to_path_segment: HashMap<u64, PathSegment> = HashMap::new();
@@ -93,11 +88,7 @@ pub fn parse_gfa_paths_walks(
     }
     let digrams: Vec<((NodeId, NodeId), ColorSet)> = digrams.into_iter().collect();
     let digrams: PriorityQueue<_, _> = PriorityQueue::from(digrams);
-    (
-        neighbors,
-        digrams,
-        path_id_to_path_segment,
-    )
+    (neighbors, digrams, path_id_to_path_segment)
 }
 
 pub fn parse_path_seq(
@@ -108,7 +99,8 @@ pub fn parse_path_seq(
     digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
     log::debug!("Parsing path: {}", path_id);
-    let mut nodes_visited: HashMap<RawNodeId, usize> = HashMap::new();
+    let mut nodes_visited_prev: HashMap<NodeId, usize> = HashMap::new();
+    let mut nodes_visited_curr: HashMap<NodeId, usize> = HashMap::new();
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
@@ -123,7 +115,6 @@ pub fn parse_path_seq(
     let prev_node = node_ids_by_name[&prev_node[..prev_node.len() - 1]];
 
     // Set the counter before setting the orientation to not take the orientation into account
-    nodes_visited.insert(prev_node, 0);
     let mut prev_node = NodeId::new(prev_node, orientation);
 
     data[..end]
@@ -134,31 +125,36 @@ pub fn parse_path_seq(
             let orientation = (current_node[current_node.len() - 1] != b'+') as u64;
             let current_node = node_ids_by_name[&current_node[..current_node.len() - 1]];
 
-            // Set the counter before setting the orientation to not take the orientation into account
-            nodes_visited
+            let current_node = NodeId::new(current_node, orientation);
+
+            nodes_visited_curr
                 .entry(current_node)
                 .and_modify(|counter| *counter += 1)
                 .or_insert(0);
-            let count = nodes_visited[&current_node];
-
-            let current_node = NodeId::new(current_node, orientation);
+            let count_curr = nodes_visited_curr[&current_node];
+            nodes_visited_prev
+                .entry(prev_node)
+                .and_modify(|counter| *counter += 1)
+                .or_insert(0);
+            let count_prev = nodes_visited_prev[&prev_node];
 
             let (first_node, second_node) = (prev_node, current_node);
             let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-            println!("inserting {}->{} | {}->{}", first_node, second_node, flipped_first_node, flipped_second_node);
+            println!(
+                "inserting {}->{} | {}->{}",
+                first_node, second_node, flipped_first_node, flipped_second_node
+            );
 
             neighbors[first_node.get_idx()].insert(second_node);
             neighbors[flipped_first_node.get_idx()].insert(flipped_second_node);
 
-            let current_path_id = (count as u64) << 32 ^ path_id;
-
             digrams
                 .entry(canonize(first_node, second_node))
                 .and_modify(|c| {
-                    c.0.insert(current_path_id);
+                    c.insert(path_id, count_prev, count_curr);
                 })
-                .or_insert(ColorSet(HashSet::from([current_path_id])));
+                .or_insert(ColorSet::from(path_id, count_prev, count_curr));
 
             prev_node = current_node;
         });
