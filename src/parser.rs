@@ -141,11 +141,6 @@ pub fn parse_path_seq(
             let (first_node, second_node) = (prev_node, current_node);
             let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-            println!(
-                "inserting {}->{} | {}->{}",
-                first_node, second_node, flipped_first_node, flipped_second_node
-            );
-
             neighbors[first_node.get_idx()].insert(second_node);
             neighbors[flipped_first_node.get_idx()].insert(flipped_second_node);
 

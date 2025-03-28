@@ -9,6 +9,7 @@ use node_id::{NodeId, RawNodeId};
 use parser::{canonize, parse_gfa_paths_walks, parse_node_ids};
 use priority_queue::PriorityQueue;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 const MAX_OCCURENCES: usize = 2;
 
@@ -16,12 +17,37 @@ type NeighborList = Vec<HashSet<NodeId>>;
 type Digrams = PriorityQueue<(NodeId, NodeId), ColorSet>;
 type Rules = HashMap<NodeId, (NodeId, NodeId)>;
 
+struct Rule {
+    left: NodeId,
+    right: Vec<NodeId>,
+    colors: ColorSet,
+}
+
+impl fmt::Debug for Rule {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{} -> {:?}", self.left, self.right,
+        )
+    }
+}
+
+impl fmt::Display for Rule {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{} -> {:?}", self.left, self.right,
+        )
+    }
+}
+
 pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rules, NodeId) {
     log::info!("Building qlines for {} digrams", digrams.len());
-    println!("D: {:?}", digrams.clone().into_sorted_vec());
-    println!("N: {:?}", neighbors);
+    // println!("D: {:?}", digrams.clone().into_sorted_vec());
+    // println!("N: {:?}", neighbors);
     let offset = NodeId::from_raw(neighbors.len() as u64);
-    println!("offset: {}", offset);
+    // println!("offset: {}", offset);
     let mut rules: Rules = HashMap::new();
 
     let mut current_max_node_id = offset;
@@ -36,8 +62,8 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             u,
             v
         );
-        println!("\tD: {:?}", digrams.clone().into_sorted_vec());
-        println!("\tN: {:?}", neighbors);
+        // println!("\tD: {:?}", digrams.clone().into_sorted_vec());
+        // println!("\tN: {:?}", neighbors);
         current_max_node_id += 2;
 
         rules.insert(non_terminal, (u, v));
@@ -50,9 +76,13 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         // having to read an mutate neighbors at the same time
         let mut neighbors_to_insert: Vec<(NodeId, NodeId)> = Vec::new();
         let mut neighbors_to_remove: Vec<(NodeId, NodeId)> = Vec::new();
+
+        neighbors_to_remove.push((u, v));
+        neighbors_to_remove.push((v.flip(), u.flip()));
+
         for n in &neighbors[v.get_idx()] {
             let n = *n;
-            println!("vn: {} - {} | {:?}", v, n, canonize(v, n));
+            // println!("vn: {} - {} | {:?}", v, n, canonize(v, n));
             let qn_set = digrams
                 .get_priority(&canonize(v, n))
                 .expect("v-n exists")
@@ -78,10 +108,12 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         }
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
-            println!("nu: {} - {} | {:?}", n, u, canonize(n, u));
             let nq_set = digrams
                 .get_priority(&canonize(n, u))
-                .expect("n-u exists")
+                .unwrap_or_else(|| {
+                    println!("nu: {} - {} | {:?} | offset: {}", n, u, canonize(n, u), offset);
+                    panic!("n-u should exist");
+                })
                 .intersection(&uv_color_set, 0);
             if nq_set.is_empty() {
                 continue;
@@ -100,7 +132,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             neighbors_to_insert.push((n, non_terminal));
             neighbors_to_insert.push((non_terminal.flip(), n.flip()));
-            println!("\tnti: {:?}", neighbors_to_insert);
+            // println!("\tnti: {:?}", neighbors_to_insert);
         }
         neighbors_to_insert.into_iter().for_each(|(key, value)| {
             neighbors[key.get_idx()].insert(value);
@@ -111,10 +143,10 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         });
         // println!("\t{:?}", digrams.clone().into_sorted_vec());
 
-        println!("\tFinished D: {:?}", digrams.clone().into_sorted_vec());
+        // println!("\tFinished D: {:?}", digrams.clone().into_sorted_vec());
     }
 
-    println!("Final N: {:?}", neighbors);
+    // println!("Final N: {:?}", neighbors);
     // Reintroduce space into non-terminal node ids for reverse non-terminals
     //let rules = decompress_non_terminals(rules, offset);
 
