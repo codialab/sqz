@@ -1,167 +1,40 @@
+mod color_set;
+mod node_id;
 mod parser;
 mod path_segment;
 
 use clap::Parser;
+use color_set::ColorSet;
+use node_id::{NodeId, RawNodeId};
 use parser::{canonize, parse_gfa_paths_walks, parse_node_ids};
 use priority_queue::PriorityQueue;
 use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::ops::{Add, AddAssign, Sub};
 
 const MAX_OCCURENCES: usize = 2;
-
-type RawNodeId = u64;
-
-#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NodeId(u64);
-
-impl NodeId {
-    fn new(id: RawNodeId, orientation: u64) -> Self {
-        Self(id << 1 ^ orientation)
-    }
-    fn flip(&self) -> NodeId {
-        Self(self.0 ^ 1)
-    }
-
-    fn get_id(&self) -> RawNodeId {
-        self.0 >> 1
-    }
-
-    fn get_orientation(&self) -> u64 {
-        self.0 & 1
-    }
-
-    fn get_idx(&self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl Add<u64> for NodeId {
-    type Output = Self;
-
-    fn add(self, other: u64) -> Self {
-        Self(self.0 + other)
-    }
-}
-
-impl AddAssign<u64> for NodeId {
-    fn add_assign(&mut self, other: u64) {
-        *self = Self(self.0 + other);
-    }
-}
-
-impl Sub for NodeId {
-    type Output = u64;
-
-    fn sub(self, other: Self) -> Self::Output {
-        self.0 - other.0
-    }
-}
-
-impl fmt::Debug for NodeId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            if self.0 & 1 == 0 { '>' } else { '<' },
-            (self.0 >> 1) + 1
-        )
-    }
-}
-
-impl fmt::Display for NodeId {
-    // This trait requires `fmt` with this exact signature.
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            if self.0 & 1 == 0 { '>' } else { '<' },
-            (self.0 >> 1) + 1
-        )
-    }
-}
 
 type NeighborList = Vec<HashSet<NodeId>>;
 type Digrams = PriorityQueue<(NodeId, NodeId), ColorSet>;
 type Rules = HashMap<NodeId, (NodeId, NodeId)>;
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct ColorSet(HashSet<u64>);
-
-impl ColorSet {
-    fn from(value: u64, prev_count: usize, curr_count: usize) -> ColorSet {
-        let mut result = ColorSet(HashSet::new());
-        result.insert(value, prev_count, curr_count);
-        result
-    }
-
-    fn intersection(&self, other: &ColorSet, intersect: u8) -> ColorSet {
-        let keys: HashSet<u64> = other
-            .0
-            .iter()
-            .map(|p| match intersect {
-                0 => !(1048575u64 << 20) & p,
-                1 => !1048575u64 & p,
-                _ => unreachable!("Should never be reached"),
-            })
-            .collect();
-        let result = self
-            .0
-            .iter()
-            .filter(|p| match intersect {
-                0 => keys.contains(&(!(1048575u64 << 20) & **p)),
-                1 => keys.contains(&(!1048575u64 & **p)),
-                _ => unreachable!("Should never be reached"),
-            })
-            .copied()
-            .collect();
-        ColorSet(result)
-    }
-
-    fn difference(&self, other: &ColorSet) -> ColorSet {
-        ColorSet(self.0.difference(&other.0).copied().collect::<HashSet<_>>())
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    fn insert(&mut self, value: u64, prev_count: usize, curr_count: usize) {
-        assert!(prev_count < 1048576);
-        assert!(curr_count < 1048576);
-        let value = (value << 40) | ((prev_count as u64) << 20) | curr_count as u64;
-        self.0.insert(value);
-    }
-}
-
-impl PartialOrd for ColorSet {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ColorSet {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.len().cmp(&other.0.len())
-    }
-}
-
 pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rules, NodeId) {
     log::info!("Building qlines for {} digrams", digrams.len());
     println!("D: {:?}", digrams.clone().into_sorted_vec());
     println!("N: {:?}", neighbors);
-    let offset = NodeId(neighbors.len() as u64);
+    let offset = NodeId::from_raw(neighbors.len() as u64);
     println!("offset: {}", offset);
     let mut rules: Rules = HashMap::new();
 
     let mut current_max_node_id = offset;
 
-    while digrams.peek().expect("At least one digram").1 .0.len() >= MAX_OCCURENCES {
+    while digrams.peek().expect("At least one digram").1.len() >= MAX_OCCURENCES {
         let ((u, v), uv_color_set) = digrams.pop().expect("At least one digram");
         let non_terminal: NodeId = current_max_node_id;
         println!(
             "Working on digram: {}, {} <- {} | {}",
-            non_terminal, non_terminal.0, u, v
+            non_terminal,
+            non_terminal.get_idx(),
+            u,
+            v
         );
         println!("\tD: {:?}", digrams.clone().into_sorted_vec());
         println!("\tN: {:?}", neighbors);
