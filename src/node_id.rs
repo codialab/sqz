@@ -29,6 +29,10 @@ impl NodeId {
     pub fn from_raw(value: u64) -> Self {
         Self(value)
     }
+
+    pub fn get_forward(&self) -> Self {
+        Self(self.0 & (!1u64))
+    }
 }
 
 impl Add<u64> for NodeId {

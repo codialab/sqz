@@ -1,1 +1,5 @@
 /target
+*.gfa
+*.og
+*.txt
+*.vg
