@@ -6,9 +6,12 @@ mod path_segment;
 use clap::Parser;
 use color_set::ColorSet;
 use node_id::{NodeId, RawNodeId};
-use parser::{canonize, parse_gfa_paths_walks, get_nodes_path, get_nodes_walk, parse_node_ids, parse_path_identifier, parse_walk_identifier, bufreader_from_compressed_gfa};
+use parser::{
+    bufreader_from_compressed_gfa, canonize, get_nodes_path, get_nodes_walk, parse_gfa_paths_walks,
+    parse_node_ids, parse_path_identifier, parse_walk_identifier,
+};
 use priority_queue::PriorityQueue;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::BufRead;
 
@@ -28,30 +31,44 @@ pub struct Rule {
 
 impl fmt::Debug for Rule {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{} -> {:?}", self.left, self.right,
-        )
+        write!(f, "{} -> {:?}", self.left, self.right,)
     }
 }
 
 impl fmt::Display for Rule {
     // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{} -> {:?}", self.left, self.right,
-        )
+        write!(f, "{} -> {:?}", self.left, self.right,)
     }
 }
 
-pub fn encode_paths(file: &str, rules: &Rules, offset: NodeId, node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>) -> HashMap<String, Vec<NodeId>> {
+pub fn encode_paths(
+    file: &str,
+    rules: &Rules,
+    offset: NodeId,
+    node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
+) -> HashMap<String, Vec<NodeId>> {
     let mut result: HashMap<String, Vec<NodeId>> = HashMap::new();
-    let rules: HashMap<Vec<NodeId>, Rule> = rules.iter().map(|(_k, v)| (v.right.clone(), v.clone())).collect();
+    let mut rules_by_digram: HashMap<(NodeId, NodeId), Vec<Rule>> = HashMap::new();
+    for (_idx, rule) in rules.iter() {
+        rules_by_digram
+            .entry(canonize(rule.right[0], rule.right[1]))
+            .and_modify(|e| e.push(rule.clone()))
+            .or_insert(vec![rule.clone()]);
+    }
+    let mut rules_by_end_digram: HashMap<(NodeId, NodeId), Vec<&Rule>> = HashMap::new();
+    for (_idx, rule) in rules.iter() {
+        rules_by_end_digram
+            .entry(canonize(rule.right[0], rule.right[1]))
+            .and_modify(|e| e.push(rule))
+            .or_insert(vec![rule]);
+    }
     let mut data = bufreader_from_compressed_gfa(file);
-    let mut statistics: HashMap<Vec<NodeId>, ColorSet> = rules.iter().map(|(k, _v)| (k.clone(), ColorSet::new())).collect();
-    let mut statistics2: HashMap<Vec<NodeId>, usize> = rules.iter().map(|(k, _v)| (k.clone(), 0)).collect();
+    let mut statistics: HashMap<NodeId, usize> =
+        rules.iter().map(|(k, _v)| (k.clone(), 0)).collect();
     let mut path_id = 0;
+
+    log::error!("RBD: {:?}", rules_by_digram);
 
     let mut buf = vec![];
     while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
@@ -68,30 +85,42 @@ pub fn encode_paths(file: &str, rules: &Rules, offset: NodeId, node_ids_by_name:
                 _ => unreachable!(),
             };
 
-            println!("{} > {:?}", path_seg, nodes);
-
-            let encoded_path = encode_path(nodes, &rules, &mut statistics, &mut statistics2, path_id, offset);
+            let encoded_path = encode_path(
+                nodes,
+                &rules_by_digram,
+                &rules_by_end_digram,
+                &mut statistics,
+                path_id,
+                offset,
+            );
             result.insert(path_seg.to_string(), encoded_path);
 
             path_id += 1;
-
         }
         buf.clear();
     }
     for (key, usage) in statistics {
-        if key[0] < offset && key[1] < offset {
-        if !rules[&key].colors.equal_set(&usage) || rules[&key].colors.len() != statistics2[&key] {
-            log::warn!("Used {} ({}) - {} ({}) exactly {} times vs supposed {}, difference: {} | {}", key[0], key[0] >= offset, key[1], key[1] >= offset, statistics2[&key], rules[&key].colors.len(), usage.difference(&rules[&key].colors), rules[&key].colors.difference(&usage));
-            if rules[&key].colors.len() < statistics2[&key] {
-                log::warn!("usage: {}", usage);
-            }
-        }
+        if rules[&key].colors.len() != usage {
+            log::warn!(
+                "Used {:?} exactly {} times vs supposed {}",
+                key,
+                usage,
+                rules[&key].colors.len()
+            );
+            // break;
         }
     }
     result
 }
 
-pub fn encode_path(nodes: Vec<NodeId>, rules: &HashMap<Vec<NodeId>, Rule>, statistics: &mut HashMap<Vec<NodeId>, ColorSet>, statistics2: &mut HashMap<Vec<NodeId>, usize>, path_id: u64, offset: NodeId) -> Vec<NodeId> {
+pub fn encode_path(
+    nodes: Vec<NodeId>,
+    rules: &HashMap<(NodeId, NodeId), Vec<Rule>>,
+    rules_by_end: &HashMap<(NodeId, NodeId), Vec<&Rule>>,
+    statistics: &mut HashMap<NodeId, usize>,
+    path_id: u64,
+    _offset: NodeId,
+) -> Vec<NodeId> {
     let mut stack: Vec<NodeId> = Vec::new();
     let mut multiplicity_stack: Vec<(usize, usize)> = Vec::new();
 
@@ -102,45 +131,43 @@ pub fn encode_path(nodes: Vec<NodeId>, rules: &HashMap<Vec<NodeId>, Rule>, stati
 
     log::info!("Encoding path {}", path_id);
 
-    for (idx, current_node) in nodes.into_iter().enumerate() {
+    let mut idx = 0;
+    while idx < nodes.len() {
+        let current_node = nodes[idx];
+        log::error!("Working on node {}, idx {}", current_node, idx);
         match stack.pop() {
             None => {
                 stack.push(current_node);
                 nodes_visited_prev.insert(current_node.get_forward());
-            },
+            }
             Some(prev_node) => {
                 if nodes_visited_curr.contains(&current_node.get_forward()) {
+                    log::error!("= Resetting outside curr =");
                     curr_counter += 1;
                     nodes_visited_curr.clear();
                 }
                 nodes_visited_curr.insert(current_node.get_forward());
 
-                let mut has_used_rule = false;
-
-                let digram = canonize(prev_node, current_node);
                 let (first_counter, second_counter) = (prev_counter, curr_counter);
-                if let Some(rule) = rules.get(&vec![digram.0, digram.1]) {
-                    if digram.0 == NodeId::new(5, 0) || digram.1 == NodeId::new(5, 1) {
-                        log::error!("Using rule {} {}:{} twice at {} | {} - {}", rule, prev_node, current_node, idx, first_counter, second_counter);
-                    }
-                    if rule.colors.contains(path_id, first_counter, second_counter) {
-                        if statistics[&vec![digram.0, digram.1]].contains(path_id, first_counter, second_counter) {
-                            log::error!("Using rule {} twice at {}", rule, idx);
-                        }
-                        if digram.0 == prev_node {
-                            stack.push(rule.left);
-                        } else {
-                            stack.push(rule.left.flip());
-                        }
-                        statistics.get_mut(&vec![digram.0, digram.1]).expect("statistics contains rule").insert(path_id, first_counter, second_counter);
-                        *statistics2.get_mut(&vec![digram.0, digram.1]).expect("statistics contains rule") += 1;
-                        has_used_rule = true;
-                    } else {
-                        // log::debug!("rule: {}, {},{} | color: {},{},{} | colors: {}", rule, prev_node, current_node, path_id, first_counter, second_counter, rule.colors);
-                    }
-                }
+                let has_used_rule = apply_rule(
+                    &mut idx,
+                    (prev_node, current_node),
+                    (first_counter, second_counter),
+                    &mut stack,
+                    &mut multiplicity_stack,
+                    &nodes,
+                    statistics,
+                    rules,
+                    rules_by_end,
+                    path_id,
+                    &mut nodes_visited_prev,
+                    &mut nodes_visited_curr,
+                    &mut prev_counter,
+                    &mut curr_counter,
+                );
 
                 if !has_used_rule {
+                    log::error!("Has not used rule for {} {}", prev_node, current_node);
                     stack.push(prev_node);
                     stack.push(current_node);
                     multiplicity_stack.push((first_counter, second_counter));
@@ -149,21 +176,25 @@ pub fn encode_path(nodes: Vec<NodeId>, rules: &HashMap<Vec<NodeId>, Rule>, stati
                     while change && stack.len() >= 2 {
                         let second = stack.pop().expect("stack has at least one node");
                         let first = stack.pop().expect("stack has at least two nodes");
-                        let mult = multiplicity_stack.pop().expect("multiplicity stack has at least one entry");
-                        let digram = canonize(first, second);
-                        change = false;
-                        if let Some(rule) = rules.get(&vec![digram.0, digram.1]) {
-                            if rule.colors.contains(path_id, mult.0, mult.1) {
-                                if digram.0 == first {
-                                    stack.push(rule.left);
-                                } else {
-                                    stack.push(rule.left.flip());
-                                }
-                                statistics.get_mut(&vec![digram.0, digram.1]).expect("statistics contains rule").insert(path_id, mult.0, mult.1);
-                                *statistics2.get_mut(&vec![digram.0, digram.1]).expect("statistics contains rule") += 1;
-                                change = true;
-                            }
-                        }
+                        let mult = multiplicity_stack
+                            .pop()
+                            .expect("multiplicity stack has at least one entry");
+                        change = apply_rule(
+                            &mut idx,
+                            (first, second),
+                            mult,
+                            &mut stack,
+                            &mut multiplicity_stack,
+                            &nodes,
+                            statistics,
+                            rules,
+                            rules_by_end,
+                            path_id,
+                            &mut nodes_visited_prev,
+                            &mut nodes_visited_curr,
+                            &mut prev_counter,
+                            &mut curr_counter,
+                        );
                         if !change {
                             stack.push(first);
                             stack.push(second);
@@ -174,14 +205,173 @@ pub fn encode_path(nodes: Vec<NodeId>, rules: &HashMap<Vec<NodeId>, Rule>, stati
 
                 // Do this last, to set prev only at the end and only once
                 if nodes_visited_prev.contains(&current_node.get_forward()) {
+                    log::error!("= Resetting outside prev =");
                     prev_counter += 1;
                     nodes_visited_prev.clear()
                 }
                 nodes_visited_prev.insert(current_node.get_forward());
-            },
+            }
         }
+        log::error!("stack: {:?}, idx: {}", stack, idx);
+        idx += 1;
     }
     stack
+}
+
+fn apply_rule(
+    idx: &mut usize,
+    digram: (NodeId, NodeId),
+    multiplicity: (usize, usize),
+    stack: &mut Vec<NodeId>,
+    multiplicity_stack: &mut Vec<(usize, usize)>,
+    nodes: &Vec<NodeId>,
+    statistics: &mut HashMap<NodeId, usize>,
+    rules: &HashMap<(NodeId, NodeId), Vec<Rule>>,
+    rules_by_end: &HashMap<(NodeId, NodeId), Vec<&Rule>>,
+    path_id: u64,
+    nodes_visited_prev: &mut HashSet<NodeId>,
+    nodes_visited_curr: &mut HashSet<NodeId>,
+    prev_counter: &mut usize,
+    curr_counter: &mut usize,
+) -> bool {
+    let canonized_digram = canonize(digram.0, digram.1);
+    log::error!("Canonized: {:?}", canonized_digram);
+    let mut has_used_rule = false;
+    for (is_end, rule) in rules
+        .get(&canonized_digram)
+        .into_iter()
+        .flatten()
+        .map(|r| (false, r))
+        .chain(
+            rules_by_end
+                .get(&canonized_digram)
+                .into_iter()
+                .flatten()
+                .map(|r| (true, *r)),
+        )
+    {
+        log::error!("\t-- Trying to work on rule: {}, with colors {}, mult: {:?} --", rule, rule.colors, multiplicity);
+        if rule
+            .colors
+            .contains(path_id, multiplicity.0, multiplicity.1)
+        {
+            log::error!("\t== Working on rule: {} ==", rule);
+            if (!is_end && digram.0 == rule.right[0]) || (is_end && digram.0 == rule.right[rule.right.len() - 1].flip()) {
+                // Exact match, continue forward
+                log::error!(
+                    "{:?} - forward match | nodes_len {} | idx {} | rule_len {}",
+                    digram,
+                    nodes.len(),
+                    idx,
+                    rule.right.len()
+                );
+                if rule.right.len() > 2 && nodes.len() > *idx + rule.right.len() - 2 {
+                    log::error!(
+                        "\tRemaining rule {:?} - {:?}",
+                        &rule.right[2..],
+                        &nodes[*idx + 1..*idx + 1 + rule.right.len() - 2]
+                    );
+                }
+                if (rule.right.len() > 2
+                    && !is_end
+                    && nodes.len() - *idx > 1
+                    && rule.right[2..] == nodes[*idx + 1..*idx + 1 + rule.right.len() - 2])
+                    || (rule.right.len() > 2
+                        && is_end
+                        && nodes.len() - *idx > 1
+                        && rule.right[..rule.right.len() - 2] == nodes[*idx + 1..*idx + 1 + rule.right.len() - 2])
+                    || (rule.right.len() == 2)
+                {
+                    // Forward match
+                    if !is_end {
+                        stack.push(rule.left.clone());
+                    } else {
+                        stack.push(rule.left.flip());
+                    }
+                    log::error!("\tInner forward: stack: {:?}", stack);
+                    *statistics
+                        .get_mut(&rule.left)
+                        .expect("statistics contains rule") += 1;
+                    has_used_rule = true;
+
+                    let new_idx = *idx + rule.right.len() - 2;
+                    for i in *idx + 1..=new_idx {
+                        if nodes_visited_curr.contains(&nodes[i].get_forward()) {
+                            log::error!("= Resetting inside curr =");
+                            *curr_counter += 1;
+                            nodes_visited_curr.clear();
+                        }
+                        nodes_visited_curr.insert(nodes[i].get_forward());
+                        if nodes_visited_prev.contains(&nodes[i].get_forward()) {
+                            log::error!("= Resetting inside prev =");
+                            *prev_counter += 1;
+                            nodes_visited_prev.clear()
+                        }
+                        nodes_visited_prev.insert(nodes[i].get_forward());
+                    }
+                    *idx = new_idx;
+                    break;
+                }
+            } else if (!is_end && digram.0 == rule.right[1].flip()) || (is_end && digram.0 == rule.right[rule.right.len() - 2]) {
+                // Reverse match continue backward
+                let rule_remaining_len = rule.right.len() - 2;
+                log::error!(
+                    "{:?} - backward match, is_end: {},  rule_remaining_len {}, stack {} -> {} {}",
+                    digram,
+                    is_end,
+                    rule_remaining_len,
+                    stack.len(),
+                    rule_remaining_len > 0,
+                    stack.len() >= 1 + rule_remaining_len
+                );
+                if rule_remaining_len > 0 && stack.len() >= rule_remaining_len {
+                    log::error!(
+                        "Remaining rule {:?} - {:?}",
+                        &rule.right[2..],
+                        reverse_rule(&stack[stack.len() - rule_remaining_len..].to_vec())
+                    );
+                }
+                if (rule_remaining_len == 0)
+                    || (rule_remaining_len > 0
+                        && !is_end
+                        && stack.len() >= rule_remaining_len
+                        && rule.right[2..]
+                            == reverse_rule(&stack[stack.len() - rule_remaining_len..].to_vec()))
+                    || (rule_remaining_len > 0
+                        && is_end
+                        && stack.len() >= rule_remaining_len
+                        && rule.right[..rule_remaining_len]
+                            == stack[stack.len() - rule_remaining_len..])
+                {
+                    log::error!("\tInner backward");
+                    for _ in 0..rule_remaining_len {
+                        stack.pop();
+                        multiplicity_stack.pop();
+                    }
+
+                    if !is_end {
+                        stack.push(rule.left.flip());
+                    } else {
+                        stack.push(rule.left);
+                    }
+                    *statistics
+                        .get_mut(&rule.left)
+                        .expect("statistics contains rule") += 1;
+                    has_used_rule = true;
+                    break;
+                }
+            }
+        } else {
+            log::error!(
+                "\tNo color match: color: {}, {} | {} | {}",
+                rule.colors,
+                path_id,
+                multiplicity.0,
+                multiplicity.1
+            );
+        }
+    }
+    has_used_rule
 }
 
 pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rules, NodeId) {
@@ -197,12 +387,17 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         let non_terminal: NodeId = current_max_node_id;
         current_max_node_id += 2;
 
-
         if u >= offset {
-            parents.entry(u).and_modify(|e| *e = None).or_insert(Some(non_terminal));
+            parents
+                .entry(u.get_forward())
+                .and_modify(|e| *e = None)
+                .or_insert(Some(non_terminal));
         }
         if v >= offset {
-            parents.entry(u).and_modify(|e| *e = None).or_insert(Some(non_terminal));
+            parents
+                .entry(v.get_forward())
+                .and_modify(|e| *e = None)
+                .or_insert(Some(non_terminal));
         }
 
         // Create space in neighbors list
@@ -217,15 +412,17 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         neighbors_to_remove.push((u, v));
         neighbors_to_remove.push((v.flip(), u.flip()));
 
-        if u == NodeId::new(26, 0) || u == NodeId::new(26, 1){
-            log::error!("We are at the critical point - {} | {}", u, v);
-        }
-        // if v == NodeId::new(8, 0) {
-        //     log::error!("We are at the critical point - {} | {}", u, v);
-        // }
-
         for n in &neighbors[v.get_idx()] {
             let n = *n;
+            if n == v && u == v {
+                // log::debug!("Self loop case: {} -> {} - {} - {}", non_terminal, u, v, n);
+                neighbors_to_remove.push((v, n));
+                neighbors_to_remove.push((n.flip(), v.flip()));
+                continue;
+            }
+            if digrams.get_priority(&canonize(v, n)).is_none() {
+                log::error!("Missing digram: {}-{}, for rule: {}-{}", v, n, u, v);
+            }
             let qn_set = digrams
                 .get_priority(&canonize(v, n))
                 .expect("v-n exists")
@@ -237,39 +434,52 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                 .get_priority(&canonize(v, n))
                 .expect("v-n exists")
                 .difference(&qn_set);
-            // if v == NodeId::new(5, 0) {
-            //     log::error!("vn - {} | {} | {} - {} - {}", v, n, digrams.get_priority(&canonize(v, n)).unwrap(), qn_set, vn_set);
-            //     log::error!("qn - {} - {} - {}", digrams.get_priority(&canonize(v, n)).unwrap(), uv_color_set, qn_set);
-            // }
-            // if v == NodeId::new(8, 0) {
-            //     log::error!("vn - {} | {} | {} - {} - {}", v, n, digrams.get_priority(&canonize(v, n)).unwrap(), qn_set, vn_set);
-            //     log::error!("qn - {} - {} - {}", digrams.get_priority(&canonize(v, n)).unwrap(), uv_color_set, qn_set);
-            // }
+            let mut empty_vn_set = false;
             if vn_set.is_empty() {
                 neighbors_to_remove.push((v, n));
                 neighbors_to_remove.push((n.flip(), v.flip()));
+                empty_vn_set = true;
             }
 
-            digrams.push(canonize(non_terminal, n), qn_set);
-            digrams.change_priority(&canonize(v, n), vn_set);
+            if n == u && u != v {
+                // log::debug!("Loop over rule case: {} -> {} - {} - {}", non_terminal, u, v, n);
+                digrams.push(canonize(non_terminal, non_terminal), qn_set);
+                digrams.change_priority(&canonize(v, n), vn_set);
 
-            // <n += <(u>v>)
-            neighbors_to_insert.push((n.flip(), non_terminal.flip()));
-            neighbors_to_insert.push((non_terminal, n));
+                // <n += <(u>v>)
+                neighbors_to_insert.push((non_terminal.flip(), non_terminal.flip()));
+                neighbors_to_insert.push((non_terminal, non_terminal));
+            } else {
+                digrams.push(canonize(non_terminal, n), qn_set);
+                digrams.change_priority(&canonize(v, n), vn_set);
+
+                // <n += <(u>v>)
+                neighbors_to_insert.push((n.flip(), non_terminal.flip()));
+                neighbors_to_insert.push((non_terminal, n));
+            }
+
+            if empty_vn_set {
+                digrams.remove(&canonize(v, n));
+            }
         }
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
+            if n == v {
+                continue;
+            }
             let nq_set = digrams
                 .get_priority(&canonize(n, u))
                 .unwrap_or_else(|| {
-                    println!("nu: {} - {} | {:?} | offset: {}", n, u, canonize(n, u), offset);
+                    eprintln!(
+                        "nu: {} - {} | {:?} | offset: {}",
+                        n,
+                        u,
+                        canonize(n, u),
+                        offset
+                    );
                     panic!("n-u should exist");
                 })
                 .intersection(&uv_color_set, 0);
-            if u == NodeId::new(26, 1) || u == NodeId::new(26, 0) {
-                log::error!("nu - {} | {} | {} - {}", n, u, digrams.get_priority(&canonize(n, u)).unwrap(), nq_set);
-                log::error!("nq - {} - {} - {}", digrams.get_priority(&canonize(n, u)).unwrap(), uv_color_set, nq_set);
-            }
             if nq_set.is_empty() {
                 continue;
             }
@@ -295,14 +505,33 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             neighbors[key.get_idx()].remove(&value);
         });
 
-        rules.insert(non_terminal, Rule { left: non_terminal, right: vec![u, v], colors: uv_color_set });
+        rules.insert(
+            non_terminal,
+            Rule {
+                left: non_terminal,
+                right: vec![u, v],
+                colors: uv_color_set,
+            },
+        );
     }
-    log::info!("Built {} rules, more than 0 parents: {}, exactly 1 parent: {}", rules.len(), parents.len(), parents.iter().map(|(_, x)| if x.is_some() { 1 } else { 0 }).sum::<u64>());
+    log::info!(
+        "Built {} rules, more than 0 parents: {}, exactly 1 parent: {}",
+        rules.len(),
+        parents.len(),
+        parents
+            .iter()
+            .map(|(_, x)| if x.is_some() { 1 } else { 0 })
+            .sum::<u64>()
+    );
 
-    let rules: Rules = rules.into_iter().filter(|(_k, v)| !v.colors.is_empty() || v.colors.len() == 1).collect();
+    let rules: Rules = rules
+        .into_iter()
+        .filter(|(_k, v)| !v.colors.is_empty() || v.colors.len() == 1)
+        .collect();
     log::info!("After removal: {}", rules.len());
 
     let rules = merge_rules(rules, parents, offset);
+    log::info!("After merging: {}", rules.len());
 
     (rules, offset)
 }
@@ -311,49 +540,65 @@ fn reverse_rule(right: &Vec<NodeId>) -> Vec<NodeId> {
     right.iter().copied().rev().map(|x| x.flip()).collect()
 }
 
-fn merge_rules(mut rules: Rules, parents: HashMap<NodeId, Option<NodeId>>, offset: NodeId) -> Rules {
+fn merge_rules(
+    mut rules: Rules,
+    parents: HashMap<NodeId, Option<NodeId>>,
+    offset: NodeId,
+) -> Rules {
     log::info!("Merging rules");
-    let mut mergeables: VecDeque<NodeId> = VecDeque::new();
+    let mut parents: HashMap<NodeId, NodeId> = parents
+        .into_iter()
+        .filter_map(|(id, parent)| parent.map(|p| (id, p)))
+        .collect();
+    let mut mergeables: Vec<NodeId> = parents.keys().copied().collect();
     let mut counter = 0;
     let mut counter_diff_colors = 0;
-    let mut counter_not_one_parent = 0;
-    for (key, rule) in rules.iter() {
-        if rule.right.iter().all(|&x| x < offset) {
-            mergeables.push_back(*key);
-        }
-    }
+
     log::debug!("Mergeables: {}", mergeables.len());
     while !mergeables.is_empty() {
-        let rule_to_collapse = mergeables.pop_front().expect("mergeables should contain at least one element");
-        if let Some(parent) = parents.get(&rule_to_collapse).cloned().flatten() {
-            if rules[&rule_to_collapse].colors.equal_set(&rules[&parent].colors) {
-                let mut idx = 0;
-                let mut reverse = false;
-                for (index, node) in rules[&parent].right.iter().enumerate() {
-                    if node.get_forward() == rule_to_collapse {
-                        idx = index;
-                        reverse = node.get_orientation() == 1;
-                    }
+        let q = mergeables.pop().expect("mergeables should contain a value");
+        // log::debug!("Merging: {} (child of {:?}), with rule: {:?} (of rule: {:?})", q, parents.get(&q), rules.get(&q), rules.get(&parents[&q]));
+        if rules[&q].colors.equal_set(&rules[&parents[&q]].colors) {
+            counter += 1;
+            let parent = parents[&q];
+
+            // Insert
+            let mut idx = 0;
+            let mut reverse = false;
+            for (index, node) in rules[&parent].right.iter().enumerate() {
+                if node.get_forward() == q {
+                    idx = index;
+                    reverse = node.get_orientation() == 1;
                 }
-                let rule_to_insert = if reverse {
-                    reverse_rule(&rules[&rule_to_collapse].right)
-                } else {
-                    rules[&rule_to_collapse].right.clone()
-                };
-                rules.get_mut(&parent).expect("rules has parent").right.splice(idx..idx + 1, rule_to_insert);
-                rules.remove(&rule_to_collapse).expect("rules contains rule to remove");
-                if rules[&parent].right.iter().all(|&x| x < offset) {
-                    mergeables.push_back(parent);
-                }
-                counter += 1;
-            } else {
-                counter_diff_colors += 1;
             }
+            let rule_to_insert = if reverse {
+                reverse_rule(&rules[&q].right)
+            } else {
+                rules[&q].right.clone()
+            };
+            rules
+                .get_mut(&parent)
+                .expect("rules has parent")
+                .right
+                .splice(idx..idx + 1, rule_to_insert);
+
+            // Set new parents
+            for child in &rules[&q].right {
+                if let Some(parent_of_child) = parents.get_mut(&child.get_forward()) {
+                    *parent_of_child = parent;
+                }
+            }
+
+            rules.remove(&q);
         } else {
-            counter_not_one_parent += 1;
+            counter_diff_colors += 1;
         }
     }
-    log::info!("Merged {} rules, {} times the color set was different, {} times there was not one parent", counter, counter_diff_colors, counter_not_one_parent);
+    log::info!(
+        "Merged {} rules, {} times the color set was different",
+        counter,
+        counter_diff_colors,
+    );
     rules
 }
 
@@ -375,9 +620,9 @@ fn main() {
     let encoded_paths = encode_paths(&args.file, &rules, offset, &node_ids_by_name);
     let rules = rules.into_iter().collect::<Vec<_>>();
     for (_, rule) in rules {
-        println!("{} - {}", rule, rule.colors);
+        println!("Q\t{} | {}", rule, rule.colors);
     }
-    for result in encoded_paths {
-        println!("{:?}", result);
+    for (path_name, path) in encoded_paths {
+        println!("Z\t{}\t{:?}", path_name, path);
     }
 }

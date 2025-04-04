@@ -17,7 +17,14 @@ impl ColorSet {
         self.0.eq(&other.0)
     }
 
-    pub fn intersection(&self, other: &ColorSet, intersect: u8) -> ColorSet {
+    pub fn intersection(&self, other: &ColorSet, _intersect: u8) -> ColorSet {
+        let sub0 = self.sub_intersection(other, 0);
+        let sub1 = self.sub_intersection(other, 1);
+        let result = sub0.0.union(&sub1.0).copied().collect();
+        ColorSet(result)
+    }
+
+    fn sub_intersection(&self, other: &ColorSet, intersect: u8) -> ColorSet {
         let keys: HashSet<u64> = other
             .0
             .iter()
@@ -61,7 +68,8 @@ impl ColorSet {
             log::error!("curr_count is {}", curr_count);
         }
         assert!(curr_count < (1 << BITS_COUNT));
-        let value = (value << (2 * BITS_COUNT)) | ((prev_count as u64) << BITS_COUNT) | curr_count as u64;
+        let value =
+            (value << (2 * BITS_COUNT)) | ((prev_count as u64) << BITS_COUNT) | curr_count as u64;
         self.0.insert(value);
     }
 
@@ -74,7 +82,8 @@ impl ColorSet {
             log::error!("curr_count is {}", curr_count);
         }
         assert!(curr_count < (1 << BITS_COUNT));
-        let value = (value << (2 * BITS_COUNT)) | ((prev_count as u64) << BITS_COUNT) | curr_count as u64;
+        let value =
+            (value << (2 * BITS_COUNT)) | ((prev_count as u64) << BITS_COUNT) | curr_count as u64;
         self.0.contains(&value)
     }
 
@@ -102,12 +111,15 @@ impl Ord for ColorSet {
 impl fmt::Display for ColorSet {
     // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{{ ");
+        write!(f, "{{ ")?;
         for el in self.0.iter() {
             write!(
                 f,
-                "{}|{}|{}, ", el >> (2 * BITS_COUNT), (el >> BITS_COUNT) & ((1 << BITS_COUNT) - 1), (el) & ((1 << BITS_COUNT) - 1)
-            );
+                "{}|{}|{}, ",
+                el >> (2 * BITS_COUNT),
+                (el >> BITS_COUNT) & ((1 << BITS_COUNT) - 1),
+                (el) & ((1 << BITS_COUNT) - 1)
+            )?;
         }
         write!(f, "}} ")
     }
