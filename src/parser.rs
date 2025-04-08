@@ -88,6 +88,9 @@ pub fn parse_gfa_paths_walks(
     }
     let digrams: Vec<((NodeId, NodeId), ColorSet)> = digrams.into_iter().collect();
     let digrams: PriorityQueue<_, _> = PriorityQueue::from(digrams);
+    for (i, j) in &digrams {
+        println!("{:?}: {:?}", i, j);
+    }
     (neighbors, digrams, path_id_to_path_segment)
 }
 
@@ -147,12 +150,13 @@ pub fn parse_path_seq(
             neighbors[flipped_first_node.get_idx()].insert(flipped_second_node);
 
             let canonized = canonize(first_node, second_node);
+            let canonized_counters = if canonized.0 == first_node { (prev_counter, curr_counter) } else { (curr_counter, prev_counter) };
             digrams
                 .entry(canonized)
                 .and_modify(|c| {
-                    c.insert(path_id, prev_counter, curr_counter);
+                    c.insert(path_id, canonized_counters);
                 })
-                .or_insert(ColorSet::from(path_id, prev_counter, curr_counter));
+                .or_insert(ColorSet::from(path_id, canonized_counters.0, canonized_counters.1));
 
             prev_node = current_node;
         });
@@ -204,56 +208,56 @@ pub fn parse_walk_seq(
     neighbors: &mut NeighborList,
     digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
-    let mut nodes_visited_prev: HashMap<NodeId, usize> = HashMap::new();
-    let mut nodes_visited_curr: HashMap<NodeId, usize> = HashMap::new();
-    let mut it = data.iter();
-    let end = it
-        .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
-        .unwrap();
+    // let mut nodes_visited_prev: HashMap<NodeId, usize> = HashMap::new();
+    // let mut nodes_visited_curr: HashMap<NodeId, usize> = HashMap::new();
+    // let mut it = data.iter();
+    // let end = it
+    //     .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
+    //     .unwrap();
 
-    let prev_node = RE_WALK
-        .captures_iter(&data[..end])
-        .take(1)
-        .collect::<Vec<_>>();
-    let orientation = (prev_node[0][1][0] == b'>') as u64;
-    let prev_node = node_ids_by_name[&prev_node[0][2]];
+    // let prev_node = RE_WALK
+    //     .captures_iter(&data[..end])
+    //     .take(1)
+    //     .collect::<Vec<_>>();
+    // let orientation = (prev_node[0][1][0] == b'>') as u64;
+    // let prev_node = node_ids_by_name[&prev_node[0][2]];
 
-    let mut prev_node = NodeId::new(prev_node, orientation);
+    // let mut prev_node = NodeId::new(prev_node, orientation);
 
-    RE_WALK.captures_iter(&data[..end]).skip(1).for_each(|m| {
-        let orientation = (m[1][0] != b'>') as u64;
-        let current_node = node_ids_by_name[&m[2]];
+    // RE_WALK.captures_iter(&data[..end]).skip(1).for_each(|m| {
+    //     let orientation = (m[1][0] != b'>') as u64;
+    //     let current_node = node_ids_by_name[&m[2]];
 
-        let current_node = NodeId::new(current_node, orientation);
+    //     let current_node = NodeId::new(current_node, orientation);
 
-        nodes_visited_curr
-            .entry(current_node)
-            .and_modify(|counter| *counter += 1)
-            .or_insert(0);
-        let count_curr = nodes_visited_curr[&current_node];
-        nodes_visited_prev
-            .entry(prev_node)
-            .and_modify(|counter| *counter += 1)
-            .or_insert(0);
-        let count_prev = nodes_visited_prev[&prev_node];
+    //     nodes_visited_curr
+    //         .entry(current_node)
+    //         .and_modify(|counter| *counter += 1)
+    //         .or_insert(0);
+    //     let count_curr = nodes_visited_curr[&current_node];
+    //     nodes_visited_prev
+    //         .entry(prev_node)
+    //         .and_modify(|counter| *counter += 1)
+    //         .or_insert(0);
+    //     let count_prev = nodes_visited_prev[&prev_node];
 
-        let (first_node, second_node) = (prev_node, current_node);
-        let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
+    //     let (first_node, second_node) = (prev_node, current_node);
+    //     let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
 
-        neighbors[first_node.get_idx()].insert(second_node);
-        neighbors[flipped_first_node.get_idx()].insert(flipped_second_node);
+    //     neighbors[first_node.get_idx()].insert(second_node);
+    //     neighbors[flipped_first_node.get_idx()].insert(flipped_second_node);
 
-        digrams
-            .entry(canonize(first_node, second_node))
-            .and_modify(|c| {
-                c.insert(path_id, count_prev, count_curr);
-            })
-            .or_insert(ColorSet::from(path_id, count_prev, count_curr));
+    //     digrams
+    //         .entry(canonize(first_node, second_node))
+    //         .and_modify(|c| {
+    //             c.insert(path_id, count_prev, count_curr);
+    //         })
+    //         .or_insert(ColorSet::from(path_id, count_prev, count_curr));
 
-        prev_node = current_node;
-    });
+    //     prev_node = current_node;
+    // });
 
-    log::debug!("parsing path sequences of size {} bytes..", end);
+    // log::debug!("parsing path sequences of size {} bytes..", end);
 }
 
 pub fn parse_walk_identifier(data: &[u8]) -> (PathSegment, &[u8]) {

@@ -37,7 +37,7 @@ pub fn encode_paths(
         rules.iter().map(|(k, _v)| (k.clone(), 0)).collect();
     let mut path_id = 0;
 
-    log::error!("RBD: {:?}", rules_by_digram);
+    // log::error!("RBD: {:?}", rules_by_digram);
 
     let mut buf = vec![];
     while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
@@ -103,7 +103,7 @@ pub fn encode_path(
     let mut idx = 0;
     while idx < nodes.len() {
         let current_node = nodes[idx];
-        log::error!("Working on node {}, idx {}", current_node, idx);
+        // log::error!("Working on node {}, idx {}", current_node, idx);
         match stack.pop() {
             None => {
                 stack.push(current_node);
@@ -111,7 +111,7 @@ pub fn encode_path(
             }
             Some(prev_node) => {
                 if nodes_visited_curr.contains(&current_node.get_forward()) {
-                    log::error!("= Resetting outside curr =");
+                    // log::error!("= Resetting outside curr =");
                     curr_counter += 1;
                     nodes_visited_curr.clear();
                 }
@@ -136,7 +136,7 @@ pub fn encode_path(
                 );
 
                 if !has_used_rule {
-                    log::error!("Has not used rule for {} {}", prev_node, current_node);
+                    // log::error!("Has not used rule for {} {}", prev_node, current_node);
                     stack.push(prev_node);
                     stack.push(current_node);
                     multiplicity_stack.push((first_counter, second_counter));
@@ -174,14 +174,14 @@ pub fn encode_path(
 
                 // Do this last, to set prev only at the end and only once
                 if nodes_visited_prev.contains(&current_node.get_forward()) {
-                    log::error!("= Resetting outside prev =");
+                    // log::error!("= Resetting outside prev =");
                     prev_counter += 1;
                     nodes_visited_prev.clear()
                 }
                 nodes_visited_prev.insert(current_node.get_forward());
             }
         }
-        log::error!("stack: {:?}, idx: {}", stack, idx);
+        // log::error!("stack: {:?}, idx: {}", stack, idx);
         idx += 1;
     }
     stack
@@ -204,7 +204,7 @@ fn apply_rule(
     curr_counter: &mut usize,
 ) -> bool {
     let canonized_digram = canonize(digram.0, digram.1);
-    log::error!("Canonized: {:?}", canonized_digram);
+    // log::error!("Canonized: {:?}", canonized_digram);
     let mut has_used_rule = false;
     for (is_end, rule) in rules
         .get(&canonized_digram)
@@ -219,34 +219,34 @@ fn apply_rule(
                 .map(|r| (true, *r)),
         )
     {
-        log::error!(
-            "\t-- Trying to work on rule: {}, with colors {}, mult: {:?} --",
-            rule,
-            rule.colors,
-            multiplicity
-        );
+        // log::error!(
+        //     "\t-- Trying to work on rule: {}, with colors {}, mult: {:?} --",
+        //     rule,
+        //     rule.colors,
+        //     multiplicity
+        // );
         if rule
             .colors
-            .contains(path_id, multiplicity.0, multiplicity.1)
+            .contains(path_id, multiplicity.0 as u32, multiplicity.1 as u32)
         {
-            log::error!("\t== Working on rule: {} ==", rule);
+            // log::error!("\t== Working on rule: {} ==", rule);
             if (!is_end && digram.0 == rule.right[0])
                 || (is_end && digram.0 == rule.right[rule.right.len() - 1].flip())
             {
                 // Exact match, continue forward
-                log::error!(
-                    "{:?} - forward match | nodes_len {} | idx {} | rule_len {}",
-                    digram,
-                    nodes.len(),
-                    idx,
-                    rule.right.len()
-                );
+                // log::error!(
+                //     "{:?} - forward match | nodes_len {} | idx {} | rule_len {}",
+                //     digram,
+                //     nodes.len(),
+                //     idx,
+                //     rule.right.len()
+                // );
                 if rule.right.len() > 2 && nodes.len() > *idx + rule.right.len() - 2 {
-                    log::error!(
-                        "\tRemaining rule {:?} - {:?}",
-                        &rule.right[2..],
-                        &nodes[*idx + 1..*idx + 1 + rule.right.len() - 2]
-                    );
+                    // log::error!(
+                    //     "\tRemaining rule {:?} - {:?}",
+                    //     &rule.right[2..],
+                    //     &nodes[*idx + 1..*idx + 1 + rule.right.len() - 2]
+                    // );
                 }
                 if (rule.right.len() > 2
                     && !is_end
@@ -265,7 +265,7 @@ fn apply_rule(
                     } else {
                         stack.push(rule.left.flip());
                     }
-                    log::error!("\tInner forward: stack: {:?}", stack);
+                    // log::error!("\tInner forward: stack: {:?}", stack);
                     *statistics
                         .get_mut(&rule.left)
                         .expect("statistics contains rule") += 1;
@@ -274,13 +274,13 @@ fn apply_rule(
                     let new_idx = *idx + rule.right.len() - 2;
                     for i in *idx + 1..=new_idx {
                         if nodes_visited_curr.contains(&nodes[i].get_forward()) {
-                            log::error!("= Resetting inside curr =");
+                            // log::error!("= Resetting inside curr =");
                             *curr_counter += 1;
                             nodes_visited_curr.clear();
                         }
                         nodes_visited_curr.insert(nodes[i].get_forward());
                         if nodes_visited_prev.contains(&nodes[i].get_forward()) {
-                            log::error!("= Resetting inside prev =");
+                            // log::error!("= Resetting inside prev =");
                             *prev_counter += 1;
                             nodes_visited_prev.clear()
                         }
@@ -294,21 +294,21 @@ fn apply_rule(
             {
                 // Reverse match continue backward
                 let rule_remaining_len = rule.right.len() - 2;
-                log::error!(
-                    "{:?} - backward match, is_end: {},  rule_remaining_len {}, stack {} -> {} {}",
-                    digram,
-                    is_end,
-                    rule_remaining_len,
-                    stack.len(),
-                    rule_remaining_len > 0,
-                    stack.len() >= 1 + rule_remaining_len
-                );
+                // log::error!(
+                //     "{:?} - backward match, is_end: {},  rule_remaining_len {}, stack {} -> {} {}",
+                //     digram,
+                //     is_end,
+                //     rule_remaining_len,
+                //     stack.len(),
+                //     rule_remaining_len > 0,
+                //     stack.len() >= 1 + rule_remaining_len
+                // );
                 if rule_remaining_len > 0 && stack.len() >= rule_remaining_len {
-                    log::error!(
-                        "Remaining rule {:?} - {:?}",
-                        &rule.right[2..],
-                        reverse_rule(&stack[stack.len() - rule_remaining_len..].to_vec())
-                    );
+                    // log::error!(
+                    //     "Remaining rule {:?} - {:?}",
+                    //     &rule.right[2..],
+                    //     reverse_rule(&stack[stack.len() - rule_remaining_len..].to_vec())
+                    // );
                 }
                 if (rule_remaining_len == 0)
                     || (rule_remaining_len > 0
@@ -322,7 +322,7 @@ fn apply_rule(
                         && rule.right[..rule_remaining_len]
                             == stack[stack.len() - rule_remaining_len..])
                 {
-                    log::error!("\tInner backward");
+                    // log::error!("\tInner backward");
                     for _ in 0..rule_remaining_len {
                         stack.pop();
                         multiplicity_stack.pop();
@@ -341,13 +341,13 @@ fn apply_rule(
                 }
             }
         } else {
-            log::error!(
-                "\tNo color match: color: {}, {} | {} | {}",
-                rule.colors,
-                path_id,
-                multiplicity.0,
-                multiplicity.1
-            );
+            // log::error!(
+            //     "\tNo color match: color: {}, {} | {} | {}",
+            //     rule.colors,
+            //     path_id,
+            //     multiplicity.0,
+            //     multiplicity.1
+            // );
         }
     }
     has_used_rule
