@@ -1,5 +1,7 @@
 use crate::{
     canonize,
+    color_set::transpose,
+    is_edge_flipped,
     node_id::NodeId,
     node_id::RawNodeId,
     parser::{
@@ -18,12 +20,12 @@ pub fn encode_paths(
     node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
 ) -> HashMap<String, Vec<NodeId>> {
     let mut result: HashMap<String, Vec<NodeId>> = HashMap::new();
-    let mut rules_by_digram: HashMap<(NodeId, NodeId), Vec<Rule>> = HashMap::new();
+    let mut rules_by_start_digram: HashMap<(NodeId, NodeId), Vec<&Rule>> = HashMap::new();
     for (_idx, rule) in rules.iter() {
-        rules_by_digram
+        rules_by_start_digram
             .entry(canonize(rule.right[0], rule.right[1]))
-            .and_modify(|e| e.push(rule.clone()))
-            .or_insert(vec![rule.clone()]);
+            .and_modify(|e| e.push(rule))
+            .or_insert(vec![rule]);
     }
     let mut rules_by_end_digram: HashMap<(NodeId, NodeId), Vec<&Rule>> = HashMap::new();
     for (_idx, rule) in rules.iter() {
@@ -56,7 +58,7 @@ pub fn encode_paths(
 
             let encoded_path = encode_path(
                 nodes,
-                &rules_by_digram,
+                &rules_by_start_digram,
                 &rules_by_end_digram,
                 &mut statistics,
                 path_id,
@@ -84,7 +86,7 @@ pub fn encode_paths(
 
 pub fn encode_path(
     nodes: Vec<NodeId>,
-    rules: &HashMap<(NodeId, NodeId), Vec<Rule>>,
+    rules_by_start: &HashMap<(NodeId, NodeId), Vec<&Rule>>,
     rules_by_end: &HashMap<(NodeId, NodeId), Vec<&Rule>>,
     statistics: &mut HashMap<NodeId, usize>,
     path_id: u64,
@@ -126,7 +128,7 @@ pub fn encode_path(
                     &mut multiplicity_stack,
                     &nodes,
                     statistics,
-                    rules,
+                    rules_by_start,
                     rules_by_end,
                     path_id,
                     &mut nodes_visited_prev,
@@ -156,7 +158,7 @@ pub fn encode_path(
                             &mut multiplicity_stack,
                             &nodes,
                             statistics,
-                            rules,
+                            rules_by_start,
                             rules_by_end,
                             path_id,
                             &mut nodes_visited_prev,
@@ -195,7 +197,7 @@ fn apply_rule(
     multiplicity_stack: &mut Vec<(usize, usize)>,
     nodes: &Vec<NodeId>,
     statistics: &mut HashMap<NodeId, usize>,
-    rules: &HashMap<(NodeId, NodeId), Vec<Rule>>,
+    rules_by_start: &HashMap<(NodeId, NodeId), Vec<&Rule>>,
     rules_by_end: &HashMap<(NodeId, NodeId), Vec<&Rule>>,
     path_id: u64,
     nodes_visited_prev: &mut HashSet<NodeId>,
@@ -204,13 +206,18 @@ fn apply_rule(
     curr_counter: &mut usize,
 ) -> bool {
     let canonized_digram = canonize(digram.0, digram.1);
+    let canonized_multiplicity = if is_edge_flipped(digram.0, digram.1) {
+        transpose(multiplicity)
+    } else {
+        multiplicity
+    };
     // log::error!("Canonized: {:?}", canonized_digram);
     let mut has_used_rule = false;
-    for (is_end, rule) in rules
+    for (is_end, rule) in rules_by_start
         .get(&canonized_digram)
         .into_iter()
         .flatten()
-        .map(|r| (false, r))
+        .map(|r| (false, *r))
         .chain(
             rules_by_end
                 .get(&canonized_digram)
@@ -225,10 +232,11 @@ fn apply_rule(
         //     rule.colors,
         //     multiplicity
         // );
-        if rule
-            .colors
-            .contains(path_id, multiplicity.0 as u32, multiplicity.1 as u32)
-        {
+        if rule.colors.contains(
+            path_id,
+            canonized_multiplicity.0 as u32,
+            canonized_multiplicity.1 as u32,
+        ) {
             // log::error!("\t== Working on rule: {} ==", rule);
             if (!is_end && digram.0 == rule.right[0])
                 || (is_end && digram.0 == rule.right[rule.right.len() - 1].flip())
@@ -241,13 +249,13 @@ fn apply_rule(
                 //     idx,
                 //     rule.right.len()
                 // );
-                if rule.right.len() > 2 && nodes.len() > *idx + rule.right.len() - 2 {
-                    // log::error!(
-                    //     "\tRemaining rule {:?} - {:?}",
-                    //     &rule.right[2..],
-                    //     &nodes[*idx + 1..*idx + 1 + rule.right.len() - 2]
-                    // );
-                }
+                // if rule.right.len() > 2 && nodes.len() > *idx + rule.right.len() - 2 {
+                //     log::error!(
+                //         "\tRemaining rule {:?} - {:?}",
+                //         &rule.right[2..],
+                //         &nodes[*idx + 1..*idx + 1 + rule.right.len() - 2]
+                //     );
+                // }
                 if (rule.right.len() > 2
                     && !is_end
                     && nodes.len() - *idx > 1
@@ -303,13 +311,13 @@ fn apply_rule(
                 //     rule_remaining_len > 0,
                 //     stack.len() >= 1 + rule_remaining_len
                 // );
-                if rule_remaining_len > 0 && stack.len() >= rule_remaining_len {
-                    // log::error!(
-                    //     "Remaining rule {:?} - {:?}",
-                    //     &rule.right[2..],
-                    //     reverse_rule(&stack[stack.len() - rule_remaining_len..].to_vec())
-                    // );
-                }
+                // if rule_remaining_len > 0 && stack.len() >= rule_remaining_len {
+                //     log::error!(
+                //         "Remaining rule {:?} - {:?}",
+                //         &rule.right[2..],
+                //         reverse_rule(&stack[stack.len() - rule_remaining_len..].to_vec())
+                //     );
+                // }
                 if (rule_remaining_len == 0)
                     || (rule_remaining_len > 0
                         && !is_end

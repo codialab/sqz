@@ -78,100 +78,87 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         neighbors_to_remove.push((u, v));
         neighbors_to_remove.push((v.flip(), u.flip()));
 
-        if u == NodeId::new(0, 1) && v == NodeId::new(146, 1) {
-            log::error!("==> {} | {} : {:?}, {:?} {:?}", u, v, uv_color_set, neighbors[u.flip().get_idx()], neighbors[v.get_idx()]);
-        }
-
         let mut mutation_outgoing = HashMap::new();
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
-            if n == v {
+
+            if n == u && u == v {
+                log::debug!("Self loop case: {} -> {} - {} - {}", non_terminal, u, v, n);
+                insert_edge(&mut neighbors_to_remove, n, u);
                 continue;
             }
 
-            let nu_set = digrams
-                .get_priority(&canonize(n, u))
-                .unwrap_or_else(|| {
-                    eprintln!(
-                        "nu: {} - {} | {:?} | offset: {}",
-                        n,
-                        u,
-                        canonize(n, u),
-                        offset
-                    );
-                    panic!("n-u should exist");
-                });
+            let nu_set = digrams.get_priority(&canonize(n, u)).unwrap_or_else(|| {
+                eprintln!(
+                    "nu: {} - {} | {:?} | offset: {}",
+                    n,
+                    u,
+                    canonize(n, u),
+                    offset
+                );
+                panic!("n-u should exist");
+            });
 
-            let is_nu_flipped = canonize(n, u).1 == n;
-            let is_nq_flipped = canonize(n, non_terminal).1 == n;
-            let (nu_set, nq_set) = uv_color_set.xu_intersection(nu_set, &mut mutation_outgoing, is_nu_flipped, is_nq_flipped);
+            let is_nu_flipped = is_edge_flipped(n, u);
+            let is_nq_flipped = is_edge_flipped(n, non_terminal);
+            let (nu_set, nq_set) = uv_color_set.xu_intersection(
+                nu_set,
+                &mut mutation_outgoing,
+                is_nu_flipped,
+                is_nq_flipped,
+            );
             if nq_set.is_empty() {
                 continue;
             }
             if nu_set.is_empty() {
-                neighbors_to_remove.push((n, u));
-                neighbors_to_remove.push((u.flip(), n.flip()));
+                insert_edge(&mut neighbors_to_remove, n, u);
             }
 
-            digrams.push(canonize(n, non_terminal), nq_set);
-            digrams.change_priority(&canonize(n, u), nu_set);
+            if n == v && u != v {
+                digrams.push(canonize(non_terminal, non_terminal), nq_set);
+                digrams.change_priority(&canonize(n, u), nu_set);
 
-            neighbors_to_insert.push((n, non_terminal));
-            neighbors_to_insert.push((non_terminal.flip(), n.flip()));
+                insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
+            } else {
+                digrams.push(canonize(n, non_terminal), nq_set);
+                digrams.change_priority(&canonize(n, u), nu_set);
+
+                insert_edge(&mut neighbors_to_insert, n, non_terminal);
+            }
         }
-        // for n in &neighbors[v.get_idx()] {
-        //     let n = *n;
-        //     if n == v && u == v {
-        //         // log::debug!("Self loop case: {} -> {} - {} - {}", non_terminal, u, v, n);
-        //         neighbors_to_remove.push((v, n));
-        //         neighbors_to_remove.push((n.flip(), v.flip()));
-        //         continue;
-        //     }
-        //     if digrams.get_priority(&canonize(v, n)).is_none() {
-        //         log::error!("Missing digram: {}-{}, for rule: {}-{}", v, n, u, v);
-        //     }
-        //     let qn_set = digrams
-        //         .get_priority(&canonize(v, n))
-        //         .expect("v-n exists")
-        //         .intersection(&uv_color_set, 1);
-        //     if qn_set.is_empty() {
-        //         continue;
-        //     }
-        //     let vn_set = digrams
-        //         .get_priority(&canonize(v, n))
-        //         .expect("v-n exists")
-        //         .difference(&qn_set);
-        //     if canonize(non_terminal, n) == (NodeId::new(0, 1), NodeId::new(146,1)) || canonize(non_terminal, n) == canonize(NodeId::new(137, 0), NodeId::new(0, 0)) {
-        //         log::error!("==> q: {} | u: {} | v: {} | n: {} : uv_colorset: {}, orig_vn: {}, qn: {}, new_vn: {}", non_terminal, u, v, n, uv_color_set, digrams.get_priority(&canonize(v, n)).unwrap(), qn_set, vn_set);
-        //     }
-        //     let mut empty_vn_set = false;
-        //     if vn_set.is_empty() {
-        //         neighbors_to_remove.push((v, n));
-        //         neighbors_to_remove.push((n.flip(), v.flip()));
-        //         empty_vn_set = true;
-        //     }
+        for n in &neighbors[v.get_idx()] {
+            let n = *n;
+            if n == u {
+                continue;
+            }
 
-        //     if n == u && u != v {
-        //         // log::debug!("Loop over rule case: {} -> {} - {} - {}", non_terminal, u, v, n);
-        //         digrams.push(canonize(non_terminal, non_terminal), qn_set);
-        //         digrams.change_priority(&canonize(v, n), vn_set);
+            let vn_set = digrams.get_priority(&canonize(v, n)).expect("v-n exists");
+            let is_vn_flipped = is_edge_flipped(v, n);
+            let is_qn_flipped = is_edge_flipped(non_terminal, n);
+            let (vn_set, qn_set) = uv_color_set.vy_intersection(
+                vn_set,
+                &mutation_outgoing,
+                is_vn_flipped,
+                is_qn_flipped,
+            );
+            if qn_set.is_empty() {
+                continue;
+            }
+            let mut empty_vn_set = false;
+            if vn_set.is_empty() {
+                insert_edge(&mut neighbors_to_remove, v, n);
+                empty_vn_set = true;
+            }
 
-        //         // <n += <(u>v>)
-        //         neighbors_to_insert.push((non_terminal.flip(), non_terminal.flip()));
-        //         neighbors_to_insert.push((non_terminal, non_terminal));
-        //     } else {
-        //         digrams.push(canonize(non_terminal, n), qn_set);
-        //         digrams.change_priority(&canonize(v, n), vn_set);
+            digrams.push(canonize(non_terminal, n), qn_set);
+            digrams.change_priority(&canonize(v, n), vn_set);
 
-        //         // <n += <(u>v>)
-        //         neighbors_to_insert.push((n.flip(), non_terminal.flip()));
-        //         neighbors_to_insert.push((non_terminal, n));
-        //     }
+            insert_edge(&mut neighbors_to_insert, non_terminal, n);
 
-        //     if empty_vn_set {
-        //         digrams.remove(&canonize(v, n));
-        //     }
-        // }
+            if empty_vn_set {
+                digrams.remove(&canonize(v, n));
+            }
+        }
         neighbors_to_insert.into_iter().for_each(|(key, value)| {
             neighbors[key.get_idx()].insert(value);
         });
@@ -204,21 +191,26 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         .collect();
     log::info!("After removal: {}", rules.len());
 
-    let rules = merge_rules(rules, parents, offset);
+    let rules = merge_rules(rules, parents);
     log::info!("After merging: {}", rules.len());
 
     (rules, offset)
+}
+
+fn is_edge_flipped(a: NodeId, b: NodeId) -> bool {
+    canonize(a, b).0 == b
+}
+
+fn insert_edge(neighbors_to_insert: &mut Vec<(NodeId, NodeId)>, a: NodeId, b: NodeId) {
+    neighbors_to_insert.push((a, b));
+    neighbors_to_insert.push((b.flip(), a.flip()));
 }
 
 fn reverse_rule(right: &Vec<NodeId>) -> Vec<NodeId> {
     right.iter().copied().rev().map(|x| x.flip()).collect()
 }
 
-fn merge_rules(
-    mut rules: Rules,
-    parents: HashMap<NodeId, Option<NodeId>>,
-    offset: NodeId,
-) -> Rules {
+fn merge_rules(mut rules: Rules, parents: HashMap<NodeId, Option<NodeId>>) -> Rules {
     log::info!("Merging rules");
     let mut parents: HashMap<NodeId, NodeId> = parents
         .into_iter()

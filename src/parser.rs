@@ -150,13 +150,21 @@ pub fn parse_path_seq(
             neighbors[flipped_first_node.get_idx()].insert(flipped_second_node);
 
             let canonized = canonize(first_node, second_node);
-            let canonized_counters = if canonized.0 == first_node { (prev_counter, curr_counter) } else { (curr_counter, prev_counter) };
+            let canonized_counters = if canonized.0 == first_node {
+                (prev_counter, curr_counter)
+            } else {
+                (curr_counter, prev_counter)
+            };
             digrams
                 .entry(canonized)
                 .and_modify(|c| {
                     c.insert(path_id, canonized_counters);
                 })
-                .or_insert(ColorSet::from(path_id, canonized_counters.0, canonized_counters.1));
+                .or_insert(ColorSet::from(
+                    path_id,
+                    canonized_counters.0,
+                    canonized_counters.1,
+                ));
 
             prev_node = current_node;
         });
@@ -202,11 +210,11 @@ pub fn get_nodes_walk(data: &[u8], node_ids_by_name: &HashMap<Vec<u8>, RawNodeId
 }
 
 pub fn parse_walk_seq(
-    data: &[u8],
-    path_id: u64,
-    node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
-    neighbors: &mut NeighborList,
-    digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
+    _data: &[u8],
+    _path_id: u64,
+    _node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
+    _neighbors: &mut NeighborList,
+    _digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
 ) {
     // let mut nodes_visited_prev: HashMap<NodeId, usize> = HashMap::new();
     // let mut nodes_visited_curr: HashMap<NodeId, usize> = HashMap::new();
