@@ -12,6 +12,7 @@ use parser::{canonize, parse_gfa_paths_walks, parse_node_ids};
 use priority_queue::PriorityQueue;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::mem;
 
 const MAX_OCCURENCES: usize = 2;
 
@@ -80,14 +81,17 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
         let mut mutation_outgoing = HashMap::new();
 
-        if u == v {
-        }
+        let mut self_sets = if u == v {
+            log::debug!("Self loop case: {} -> {} - {}", non_terminal, u, v);
+            Some(uv_color_set.colors.sectionize(&mut mutation_outgoing))
+        } else {
+            None
+        };
 
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
 
             if n == u && u == v {
-                log::debug!("Self loop case: {} -> {} - {} - {}", non_terminal, u, v, n);
                 insert_edge(&mut neighbors_to_remove, n, u);
                 continue;
             }
@@ -136,7 +140,10 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                     println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
                     println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
                 }
-                digrams.push(canonize(non_terminal, non_terminal), OrdColorSet::new(nq_set, true));
+                digrams.push(
+                    canonize(non_terminal, non_terminal),
+                    OrdColorSet::new(nq_set, true),
+                );
                 digrams.change_priority(&canonize(n, u), OrdColorSet::new(new_nu_set, false));
 
                 insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
@@ -149,9 +156,26 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         }
         for n in &neighbors[v.get_idx()] {
             let n = *n;
-            // if n == u {
-            //     continue;
-            // }
+
+            if n == u && u != v {
+                continue;
+            } else if n == v && u == v {
+                let (qq_set, qv_set) =
+                    mem::take(&mut self_sets).expect("self sets should have been set");
+                if !qq_set.is_empty() {
+                    digrams.push(
+                        canonize(non_terminal, non_terminal),
+                        OrdColorSet::new(qq_set, true),
+                    );
+                    insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
+                }
+                if !qv_set.is_empty() {
+                    digrams.push(canonize(non_terminal, v), OrdColorSet::new(qv_set, false));
+                    insert_edge(&mut neighbors_to_insert, non_terminal, v);
+                }
+                insert_edge(&mut neighbors_to_remove, v, n);
+                continue;
+            }
 
             let vn_set = digrams.get_priority(&canonize(v, n)).unwrap_or_else(|| {
                 log::error!(
@@ -165,12 +189,22 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             });
             let is_vn_flipped = is_edge_flipped(v, n);
             let is_qn_flipped = is_edge_flipped(non_terminal, n);
-            let (new_vn_set, qn_set) = uv_color_set.colors.vy_intersection(
-                &vn_set.colors,
-                &mutation_outgoing,
-                is_vn_flipped,
-                is_qn_flipped,
-            );
+            let (mut new_vn_set, mut qn_set) = if u != v {
+                uv_color_set.colors.vy_intersection(
+                    &vn_set.colors,
+                    &mutation_outgoing,
+                    is_vn_flipped,
+                    is_qn_flipped,
+                )
+            } else {
+                let dont_mutate = HashMap::new();
+                uv_color_set.colors.vy_intersection(
+                    &vn_set.colors,
+                    &dont_mutate,
+                    is_vn_flipped,
+                    is_qn_flipped,
+                )
+            };
             if u.get_forward() == NodeId::new(32, 0) && v.get_forward() == NodeId::new(149, 0) {
                 println!("=====================");
                 println!("u: {}, v: {}, (q: {}), n: {}", u, v, non_terminal, n);
@@ -184,9 +218,19 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                 );
                 println!("=====================");
             }
+
+            // Reduce qn_set further to only include the edge only in the case that it was an odd number of self-loops
+            if u == v {
+                log::error!("Running on qn_set");
+                let (new_qn_set, vn_set_addition) = qn_set.self_vy_intersection(&mutation_outgoing);
+                qn_set = new_qn_set;
+                new_vn_set.add_addition(vn_set_addition);
+            }
+
             if qn_set.is_empty() {
                 continue;
             }
+
             let mut empty_vn_set = false;
             if new_vn_set.is_empty() {
                 insert_edge(&mut neighbors_to_remove, v, n);

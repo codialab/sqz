@@ -1,5 +1,8 @@
 use crate::path_segment::PathSegment;
-use crate::{color_set::{ColorSet, OrdColorSet}, Digrams, NeighborList, NodeId, RawNodeId};
+use crate::{
+    color_set::{ColorSet, OrdColorSet},
+    Digrams, NeighborList, NodeId, RawNodeId,
+};
 use core::str;
 use flate2::read::MultiGzDecoder;
 use indexmap::IndexMap;
@@ -160,11 +163,10 @@ pub fn parse_path_seq(
                 .and_modify(|c| {
                     c.colors.insert(path_id, canonized_counters);
                 })
-                .or_insert(OrdColorSet::new(ColorSet::from(
-                    path_id,
-                    canonized_counters.0,
-                    canonized_counters.1,
-                ), canonized.0 == canonized.1));
+                .or_insert(OrdColorSet::new(
+                    ColorSet::from(path_id, canonized_counters.0, canonized_counters.1),
+                    canonized.0 == canonized.1,
+                ));
 
             prev_node = current_node;
         });
