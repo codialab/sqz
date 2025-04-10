@@ -52,7 +52,7 @@ impl ColorSet {
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.0.values().flatten().count()
     }
 
     pub fn new() -> Self {

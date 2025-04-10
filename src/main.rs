@@ -82,10 +82,12 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
 
-            if n == u && u == v {
-                log::debug!("Self loop case: {} -> {} - {} - {}", non_terminal, u, v, n);
-                insert_edge(&mut neighbors_to_remove, n, u);
-                continue;
+            if u.get_forward() == NodeId::new(32, 0) && v.get_forward() == NodeId::new(149, 0) {
+                if n == u && u == v {
+                    log::debug!("Self loop case: {} -> {} - {} - {}", non_terminal, u, v, n);
+                    insert_edge(&mut neighbors_to_remove, n, u);
+                    continue;
+                }
             }
 
             let nu_set = digrams.get_priority(&canonize(n, u)).unwrap_or_else(|| {
@@ -101,57 +103,87 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             let is_nu_flipped = is_edge_flipped(n, u);
             let is_nq_flipped = is_edge_flipped(n, non_terminal);
-            let (nu_set, nq_set) = uv_color_set.xu_intersection(
+            let (new_nu_set, nq_set) = uv_color_set.xu_intersection(
                 nu_set,
                 &mut mutation_outgoing,
                 is_nu_flipped,
                 is_nq_flipped,
             );
+            if u.get_forward() == NodeId::new(32, 0) && v.get_forward() == NodeId::new(149, 0) {
+                println!("=====================");
+                println!("n: {}, u: {}, v: {}, (q: {})", n, u, v, non_terminal);
+                println!(
+                    "nu: {:?}, uv: {:?}, nu_flipped: {}, nq_flipped: {}",
+                    nu_set, uv_color_set, is_nu_flipped, is_nq_flipped
+                );
+                println!(
+                    "nu: {:?}, nq: {:?}, mutation: {:?}",
+                    new_nu_set, nq_set, mutation_outgoing
+                );
+                println!("=====================");
+            }
             if nq_set.is_empty() {
                 continue;
             }
-            if nu_set.is_empty() {
+            if new_nu_set.is_empty() {
                 insert_edge(&mut neighbors_to_remove, n, u);
             }
 
             if n == v && u != v {
+                if u.get_forward() == NodeId::new(32, 0) && v.get_forward() == NodeId::new(149, 0) {
+                    println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                    println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                }
                 digrams.push(canonize(non_terminal, non_terminal), nq_set);
-                digrams.change_priority(&canonize(n, u), nu_set);
+                digrams.change_priority(&canonize(n, u), new_nu_set);
 
                 insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
             } else {
                 digrams.push(canonize(n, non_terminal), nq_set);
-                digrams.change_priority(&canonize(n, u), nu_set);
+                digrams.change_priority(&canonize(n, u), new_nu_set);
 
                 insert_edge(&mut neighbors_to_insert, n, non_terminal);
             }
         }
         for n in &neighbors[v.get_idx()] {
             let n = *n;
-            if n == u {
-                continue;
-            }
+            // if n == u {
+            //     continue;
+            // }
 
             let vn_set = digrams.get_priority(&canonize(v, n)).expect("v-n exists");
             let is_vn_flipped = is_edge_flipped(v, n);
             let is_qn_flipped = is_edge_flipped(non_terminal, n);
-            let (vn_set, qn_set) = uv_color_set.vy_intersection(
+            let (new_vn_set, qn_set) = uv_color_set.vy_intersection(
                 vn_set,
                 &mutation_outgoing,
                 is_vn_flipped,
                 is_qn_flipped,
             );
+            if u.get_forward() == NodeId::new(32, 0) && v.get_forward() == NodeId::new(149, 0) {
+                println!("=====================");
+                println!("u: {}, v: {}, (q: {}), n: {}", u, v, non_terminal, n);
+                println!(
+                    "vn: {:?}, uv: {:?}, vn_flipped: {}, qn_flipped: {}",
+                    vn_set, uv_color_set, is_vn_flipped, is_qn_flipped
+                );
+                println!(
+                    "vn: {:?}, qn: {:?}, mutation: {:?}",
+                    new_vn_set, qn_set, mutation_outgoing
+                );
+                println!("=====================");
+            }
             if qn_set.is_empty() {
                 continue;
             }
             let mut empty_vn_set = false;
-            if vn_set.is_empty() {
+            if new_vn_set.is_empty() {
                 insert_edge(&mut neighbors_to_remove, v, n);
                 empty_vn_set = true;
             }
 
             digrams.push(canonize(non_terminal, n), qn_set);
-            digrams.change_priority(&canonize(v, n), vn_set);
+            digrams.change_priority(&canonize(v, n), new_vn_set);
 
             insert_edge(&mut neighbors_to_insert, non_terminal, n);
 
@@ -198,7 +230,16 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 }
 
 fn is_edge_flipped(a: NodeId, b: NodeId) -> bool {
-    canonize(a, b).0 == b
+    if a == NodeId::new(74, 0) && b == NodeId::new(26, 0) {
+        println!(
+            "FLIP?: {:?}, {:?}, {}, {}",
+            (a, b),
+            canonize(a, b),
+            canonize(a, b).0,
+            canonize(a, b).0 == b.flip()
+        )
+    }
+    canonize(a, b).0 == b.flip()
 }
 
 fn insert_edge(neighbors_to_insert: &mut Vec<(NodeId, NodeId)>, a: NodeId, b: NodeId) {

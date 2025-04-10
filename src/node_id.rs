@@ -33,6 +33,10 @@ impl NodeId {
     pub fn get_forward(&self) -> Self {
         Self(self.0 & (!1u64))
     }
+
+    pub fn is_forward(&self) -> bool {
+        self.0 & 1 == 0
+    }
 }
 
 impl Add<u64> for NodeId {
