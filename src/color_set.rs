@@ -10,6 +10,57 @@ pub fn transpose<T>(vals: (T, T)) -> (T, T) {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
+pub struct OrdColorSet {
+    pub colors: ColorSet,
+    pub is_self_loop: bool,
+}
+
+impl OrdColorSet {
+    pub fn new(colors: ColorSet, is_self_loop: bool) -> Self {
+        Self {
+            colors,
+            is_self_loop,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        if self.is_self_loop {
+            let result: usize = self.colors.0.iter().map(|(_, v)| {
+                let mut multiplicities = v.to_owned();
+                multiplicities.sort();
+                let mut sections = Vec::new();
+                let mut current_section = 1usize;
+                multiplicities.into_iter().tuple_windows().for_each(|(first, second)| {
+                    if second.0 == first.1 || second.1 == first.0 {
+                        current_section += 1;
+                    } else {
+                        sections.push(mem::take(&mut current_section));
+                        current_section = 1;
+                    }
+                });
+                sections.push(current_section);
+                sections.into_iter().map(|no_of_loops| (no_of_loops + 1) / 2).sum::<usize>()
+            }).sum();
+            result
+        } else {
+            self.colors.0.iter().map(|(_, v)| v).flatten().count()
+        }
+    }
+}
+
+impl PartialOrd for OrdColorSet {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.len().cmp(&other.len()))
+    }
+}
+
+impl Ord for OrdColorSet {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(&other).unwrap()
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct ColorSet(HashMap<PathId, Vec<(Multiplicity, Multiplicity)>>);
 
 impl ColorSet {
@@ -219,24 +270,24 @@ impl ColorSet {
     }
 }
 
-impl PartialOrd for ColorSet {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(
-            self.0
-                .iter()
-                .map(|(_, v)| v)
-                .flatten()
-                .count()
-                .cmp(&other.0.iter().map(|(_, v)| v).flatten().count()),
-        )
-    }
-}
+// impl PartialOrd for ColorSet {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         Some(
+//             self.0
+//                 .iter()
+//                 .map(|(_, v)| v)
+//                 .flatten()
+//                 .count()
+//                 .cmp(&other.0.iter().map(|(_, v)| v).flatten().count()),
+//         )
+//     }
+// }
 
-impl Ord for ColorSet {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.len().cmp(&other.0.len())
-    }
-}
+// impl Ord for ColorSet {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         self.0.len().cmp(&other.0.len())
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

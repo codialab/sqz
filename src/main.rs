@@ -5,7 +5,7 @@ mod parser;
 mod path_segment;
 
 use clap::Parser;
-use color_set::ColorSet;
+use color_set::{ColorSet, OrdColorSet};
 use compressor::encode_paths;
 use node_id::{NodeId, RawNodeId};
 use parser::{canonize, parse_gfa_paths_walks, parse_node_ids};
@@ -16,7 +16,7 @@ use std::fmt;
 const MAX_OCCURENCES: usize = 2;
 
 type NeighborList = Vec<HashSet<NodeId>>;
-type Digrams = PriorityQueue<(NodeId, NodeId), ColorSet>;
+type Digrams = PriorityQueue<(NodeId, NodeId), OrdColorSet>;
 type Rules = HashMap<NodeId, Rule>;
 
 #[derive(Clone)]
@@ -79,6 +79,10 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         neighbors_to_remove.push((v.flip(), u.flip()));
 
         let mut mutation_outgoing = HashMap::new();
+
+        if u == v {
+        }
+
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
 
@@ -101,8 +105,8 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             let is_nu_flipped = is_edge_flipped(n, u);
             let is_nq_flipped = is_edge_flipped(n, non_terminal);
-            let (new_nu_set, nq_set) = uv_color_set.xu_intersection(
-                nu_set,
+            let (new_nu_set, nq_set) = uv_color_set.colors.xu_intersection(
+                &nu_set.colors,
                 &mut mutation_outgoing,
                 is_nu_flipped,
                 is_nq_flipped,
@@ -132,13 +136,13 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                     println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
                     println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
                 }
-                digrams.push(canonize(non_terminal, non_terminal), nq_set);
-                digrams.change_priority(&canonize(n, u), new_nu_set);
+                digrams.push(canonize(non_terminal, non_terminal), OrdColorSet::new(nq_set, true));
+                digrams.change_priority(&canonize(n, u), OrdColorSet::new(new_nu_set, false));
 
                 insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
             } else {
-                digrams.push(canonize(n, non_terminal), nq_set);
-                digrams.change_priority(&canonize(n, u), new_nu_set);
+                digrams.push(canonize(n, non_terminal), OrdColorSet::new(nq_set, false));
+                digrams.change_priority(&canonize(n, u), OrdColorSet::new(new_nu_set, n == u));
 
                 insert_edge(&mut neighbors_to_insert, n, non_terminal);
             }
@@ -161,8 +165,8 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             });
             let is_vn_flipped = is_edge_flipped(v, n);
             let is_qn_flipped = is_edge_flipped(non_terminal, n);
-            let (new_vn_set, qn_set) = uv_color_set.vy_intersection(
-                vn_set,
+            let (new_vn_set, qn_set) = uv_color_set.colors.vy_intersection(
+                &vn_set.colors,
                 &mutation_outgoing,
                 is_vn_flipped,
                 is_qn_flipped,
@@ -189,8 +193,8 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                 empty_vn_set = true;
             }
 
-            digrams.push(canonize(non_terminal, n), qn_set);
-            digrams.change_priority(&canonize(v, n), new_vn_set);
+            digrams.push(canonize(non_terminal, n), OrdColorSet::new(qn_set, false));
+            digrams.change_priority(&canonize(v, n), OrdColorSet::new(new_vn_set, v == n));
 
             insert_edge(&mut neighbors_to_insert, non_terminal, n);
 
@@ -210,7 +214,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             Rule {
                 left: non_terminal,
                 right: vec![u, v],
-                colors: uv_color_set,
+                colors: uv_color_set.colors,
             },
         );
     }

@@ -1,5 +1,5 @@
 use crate::path_segment::PathSegment;
-use crate::{color_set::ColorSet, Digrams, NeighborList, NodeId, RawNodeId};
+use crate::{color_set::{ColorSet, OrdColorSet}, Digrams, NeighborList, NodeId, RawNodeId};
 use core::str;
 use flate2::read::MultiGzDecoder;
 use indexmap::IndexMap;
@@ -50,7 +50,7 @@ pub fn parse_gfa_paths_walks(
 
     let number_of_nodes = node_ids_by_name.len();
     let mut neighbors: NeighborList = vec![HashSet::new(); number_of_nodes * 2]; // Multiply by two to account for orientation
-    let mut digrams: IndexMap<(NodeId, NodeId), ColorSet> = IndexMap::new();
+    let mut digrams: IndexMap<(NodeId, NodeId), OrdColorSet> = IndexMap::new();
 
     let mut path_id_to_path_segment: HashMap<u64, PathSegment> = HashMap::new();
 
@@ -86,7 +86,7 @@ pub fn parse_gfa_paths_walks(
         }
         buf.clear();
     }
-    let digrams: Vec<((NodeId, NodeId), ColorSet)> = digrams.into_iter().collect();
+    let digrams: Vec<((NodeId, NodeId), OrdColorSet)> = digrams.into_iter().collect();
     let digrams: PriorityQueue<_, _> = PriorityQueue::from(digrams);
     for (i, j) in &digrams {
         println!("{:?}: {:?}", i, j);
@@ -99,7 +99,7 @@ pub fn parse_path_seq(
     path_id: u64,
     node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
     neighbors: &mut NeighborList,
-    digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
+    digrams: &mut IndexMap<(NodeId, NodeId), OrdColorSet>,
 ) {
     log::debug!("Parsing path: {}", path_id);
     let mut nodes_visited_prev: HashSet<NodeId> = HashSet::new();
@@ -158,13 +158,13 @@ pub fn parse_path_seq(
             digrams
                 .entry(canonized)
                 .and_modify(|c| {
-                    c.insert(path_id, canonized_counters);
+                    c.colors.insert(path_id, canonized_counters);
                 })
-                .or_insert(ColorSet::from(
+                .or_insert(OrdColorSet::new(ColorSet::from(
                     path_id,
                     canonized_counters.0,
                     canonized_counters.1,
-                ));
+                ), canonized.0 == canonized.1));
 
             prev_node = current_node;
         });
@@ -214,7 +214,7 @@ pub fn parse_walk_seq(
     _path_id: u64,
     _node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
     _neighbors: &mut NeighborList,
-    _digrams: &mut IndexMap<(NodeId, NodeId), ColorSet>,
+    _digrams: &mut IndexMap<(NodeId, NodeId), OrdColorSet>,
 ) {
     // let mut nodes_visited_prev: HashMap<NodeId, usize> = HashMap::new();
     // let mut nodes_visited_curr: HashMap<NodeId, usize> = HashMap::new();
