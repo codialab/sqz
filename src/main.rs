@@ -7,25 +7,26 @@ mod path_segment;
 use clap::Parser;
 use color_set::{ColorSet, OrdColorSet};
 use compressor::encode_paths;
+use compressor::encode_paths2;
 use node_id::{NodeId, RawNodeId};
 use parser::{canonize, parse_gfa_paths_walks, parse_node_ids};
 use priority_queue::PriorityQueue;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::mem;
+use indexmap::IndexMap;
 
 const MAX_OCCURENCES: usize = 2;
 
 type NeighborList = Vec<HashSet<NodeId>>;
 type Digrams = PriorityQueue<(NodeId, NodeId), OrdColorSet>;
-type Rules = HashMap<NodeId, Rule>;
+type Rules = IndexMap<NodeId, Rule>;
 
 #[derive(Clone)]
 pub struct Rule {
     left: NodeId,
     right: Vec<NodeId>,
-    #[allow(dead_code)]
-    colors: ColorSet,
+    colors: OrdColorSet,
 }
 
 impl fmt::Debug for Rule {
@@ -44,8 +45,8 @@ impl fmt::Display for Rule {
 pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rules, NodeId) {
     log::info!("Building qlines for {} digrams", digrams.len());
     let offset = NodeId::from_raw(neighbors.len() as u64);
-    let mut rules: Rules = HashMap::new();
-    let mut parents: HashMap<NodeId, Option<NodeId>> = HashMap::new();
+    let mut rules: Rules = IndexMap::new();
+    let mut parents: IndexMap<NodeId, Option<NodeId>> = IndexMap::new();
 
     let mut current_max_node_id = offset;
 
@@ -81,15 +82,14 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
         let mut mutation_outgoing = HashMap::new();
 
-        let mut self_sets = if u == v {
-            log::debug!("Self loop case: {} -> {} - {}", non_terminal, u, v);
-            Some(uv_color_set.colors.sectionize(&mut mutation_outgoing))
-        } else {
-            None
-        };
+        let mut new_uv_set = None;
+
+        // let should_print = non_terminal == NodeId::new(11, 0) || non_terminal == NodeId::new(8, 0) || non_terminal == NodeId::new(9, 0) || non_terminal == NodeId::new(10, 0); //(u.get_forward() == NodeId::new(9, 0) && v.get_forward() == NodeId::new(991, 0)) || (u.get_forward() == NodeId::new(987, 0) && v.get_forward() == NodeId::new(989, 0));
+        let should_print = true;
 
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
+            println!("nu's n: {}", n);
 
             if n == u && u == v {
                 insert_edge(&mut neighbors_to_remove, n, u);
@@ -109,13 +109,13 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             let is_nu_flipped = is_edge_flipped(n, u);
             let is_nq_flipped = is_edge_flipped(n, non_terminal);
-            let (new_nu_set, nq_set) = uv_color_set.colors.xu_intersection(
+            let (new_nu_set, mut nq_set) = uv_color_set.colors.xu_intersection(
                 &nu_set.colors,
                 &mut mutation_outgoing,
                 is_nu_flipped,
                 is_nq_flipped,
             );
-            if u.get_forward() == NodeId::new(32, 0) && v.get_forward() == NodeId::new(149, 0) {
+            if should_print {
                 println!("=====================");
                 println!("n: {}, u: {}, v: {}, (q: {})", n, u, v, non_terminal);
                 println!(
@@ -136,14 +136,23 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             }
 
             if n == v && u != v {
-                if u.get_forward() == NodeId::new(32, 0) && v.get_forward() == NodeId::new(149, 0) {
-                    println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-                    println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                if should_print {
                 }
-                digrams.push(
-                    canonize(non_terminal, non_terminal),
-                    OrdColorSet::new(nq_set, true),
-                );
+                println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                println!("non_terminal: {}, nq_set: {:?}", non_terminal, nq_set);
+                println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                if is_nq_flipped == is_edge_flipped(non_terminal, non_terminal) {
+                    digrams.push(
+                        canonize(non_terminal, non_terminal),
+                        OrdColorSet::new(nq_set, true),
+                    );
+                } else {
+                    nq_set.flip_all();
+                    digrams.push(
+                        canonize(non_terminal, non_terminal),
+                        OrdColorSet::new(nq_set, true),
+                    );
+                }
                 digrams.change_priority(&canonize(n, u), OrdColorSet::new(new_nu_set, false));
 
                 insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
@@ -154,23 +163,49 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                 insert_edge(&mut neighbors_to_insert, n, non_terminal);
             }
         }
+
+        let mut self_sets = if u == v {
+            log::debug!("Self loop case: {} -> {} - {}, uv: {:?}", non_terminal, u, v, uv_color_set);
+            let self_sets = uv_color_set.colors.sectionize(&mut mutation_outgoing);
+            log::error!("Self loop contents: qq: {:?}, qv: {:?}, uv: {:?}", self_sets.0, self_sets.1, self_sets.2);
+            Some(self_sets)
+        } else {
+            None
+        };
+
         for n in &neighbors[v.get_idx()] {
             let n = *n;
+            println!("vn's n: {}", n);
 
             if n == u && u != v {
-                continue;
+                //continue;
             } else if n == v && u == v {
-                let (qq_set, qv_set) =
+                let (mut qq_set, mut qv_set, uv_temp) =
                     mem::take(&mut self_sets).expect("self sets should have been set");
+                println!("qq_set: {:?}", qq_set);
+                new_uv_set = Some(uv_temp);
                 if !qq_set.is_empty() {
-                    digrams.push(
-                        canonize(non_terminal, non_terminal),
-                        OrdColorSet::new(qq_set, true),
-                    );
+                    if is_edge_flipped(non_terminal, non_terminal) {
+                        qq_set.flip_all();
+                        digrams.push(
+                            canonize(non_terminal, non_terminal),
+                            OrdColorSet::new(qq_set, true),
+                        );
+                    } else {
+                        digrams.push(
+                            canonize(non_terminal, non_terminal),
+                            OrdColorSet::new(qq_set, true),
+                        );
+                    }
                     insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
                 }
                 if !qv_set.is_empty() {
-                    digrams.push(canonize(non_terminal, v), OrdColorSet::new(qv_set, false));
+                    if is_edge_flipped(non_terminal, v) {
+                        qv_set.flip_all();
+                        digrams.push(canonize(non_terminal, v), OrdColorSet::new(qv_set, false));
+                    } else {
+                        digrams.push(canonize(non_terminal, v), OrdColorSet::new(qv_set, false));
+                    }
                     insert_edge(&mut neighbors_to_insert, non_terminal, v);
                 }
                 insert_edge(&mut neighbors_to_remove, v, n);
@@ -205,7 +240,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                     is_qn_flipped,
                 )
             };
-            if u.get_forward() == NodeId::new(32, 0) && v.get_forward() == NodeId::new(149, 0) {
+            if should_print {
                 println!("=====================");
                 println!("u: {}, v: {}, (q: {}), n: {}", u, v, non_terminal, n);
                 println!(
@@ -221,10 +256,11 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             // Reduce qn_set further to only include the edge only in the case that it was an odd number of self-loops
             if u == v {
-                log::error!("Running on qn_set");
-                let (new_qn_set, vn_set_addition) = qn_set.self_vy_intersection(&mutation_outgoing);
+                log::error!("Running on qn_set: {} -> {} {}, n: {}, old_qn: {:?}", non_terminal, u, v, n, qn_set);
+                let (new_qn_set, vn_set_addition) = qn_set.self_vy_intersection(&mutation_outgoing, is_vn_flipped, is_qn_flipped);
                 qn_set = new_qn_set;
                 new_vn_set.add_addition(vn_set_addition);
+                log::error!("Running on qn_set: qn: {:?}, new_vn_set: {:?}", qn_set, new_vn_set);
             }
 
             if qn_set.is_empty() {
@@ -237,7 +273,12 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                 empty_vn_set = true;
             }
 
-            digrams.push(canonize(non_terminal, n), OrdColorSet::new(qn_set, false));
+            if is_qn_flipped == is_vn_flipped {
+                digrams.push(canonize(non_terminal, n), OrdColorSet::new(qn_set, false));
+            } else {
+                // qn_set.flip_all();
+                digrams.push(canonize(non_terminal, n), OrdColorSet::new(qn_set, false));
+            }
             digrams.change_priority(&canonize(v, n), OrdColorSet::new(new_vn_set, v == n));
 
             insert_edge(&mut neighbors_to_insert, non_terminal, n);
@@ -253,14 +294,26 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             neighbors[key.get_idx()].remove(&value);
         });
 
-        rules.insert(
-            non_terminal,
-            Rule {
-                left: non_terminal,
-                right: vec![u, v],
-                colors: uv_color_set.colors,
-            },
-        );
+        if new_uv_set.is_none() {
+            rules.insert(
+                non_terminal,
+                Rule {
+                    left: non_terminal,
+                    right: vec![u, v],
+                    colors: uv_color_set,
+                },
+            );
+        } else {
+            println!("Self sets: {:?}", self_sets);
+            rules.insert(
+                non_terminal,
+                Rule {
+                    left: non_terminal,
+                    right: vec![u, v],
+                    colors: OrdColorSet::new(new_uv_set.unwrap(), true),
+                },
+            );
+        }
     }
     log::info!(
         "Built {} rules, more than 0 parents: {}, exactly 1 parent: {}",
@@ -274,12 +327,12 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
     let rules: Rules = rules
         .into_iter()
-        .filter(|(_k, v)| !v.colors.is_empty() || v.colors.len() == 1)
+        .filter(|(_k, v)| !v.colors.colors.is_empty() || v.colors.len() == 1)
         .collect();
     log::info!("After removal: {}", rules.len());
 
-    let rules = merge_rules(rules, parents);
-    log::info!("After merging: {}", rules.len());
+    // let rules = merge_rules(rules, parents);
+    // log::info!("After merging: {}", rules.len());
 
     (rules, offset)
 }
@@ -306,9 +359,9 @@ fn reverse_rule(right: &Vec<NodeId>) -> Vec<NodeId> {
     right.iter().copied().rev().map(|x| x.flip()).collect()
 }
 
-fn merge_rules(mut rules: Rules, parents: HashMap<NodeId, Option<NodeId>>) -> Rules {
+fn merge_rules(mut rules: Rules, parents: IndexMap<NodeId, Option<NodeId>>) -> Rules {
     log::info!("Merging rules");
-    let mut parents: HashMap<NodeId, NodeId> = parents
+    let mut parents: IndexMap<NodeId, NodeId> = parents
         .into_iter()
         .filter_map(|(id, parent)| parent.map(|p| (id, p)))
         .collect();
@@ -320,7 +373,7 @@ fn merge_rules(mut rules: Rules, parents: HashMap<NodeId, Option<NodeId>>) -> Ru
     while !mergeables.is_empty() {
         let q = mergeables.pop().expect("mergeables should contain a value");
         // log::debug!("Merging: {} (child of {:?}), with rule: {:?} (of rule: {:?})", q, parents.get(&q), rules.get(&q), rules.get(&parents[&q]));
-        if rules[&q].colors.equal_set(&rules[&parents[&q]].colors) {
+        if rules[&q].colors.colors.equal_set(&rules[&parents[&q]].colors.colors) {
             counter += 1;
             let parent = parents[&q];
 
@@ -379,8 +432,9 @@ fn main() {
     let (mut neighbors, mut digrams, _path_id_to_path_segment) =
         parse_gfa_paths_walks(&args.file, &node_ids_by_name);
     let (rules, offset) = build_qlines(&mut neighbors, &mut digrams);
-    let encoded_paths = encode_paths(&args.file, &rules, offset, &node_ids_by_name);
-    let rules = rules.into_iter().collect::<Vec<_>>();
+    let encoded_paths = encode_paths2(&args.file, &rules, offset, &node_ids_by_name);
+    let mut rules = rules.into_iter().collect::<Vec<_>>();
+    rules.sort_by_key(|r| r.0.get_idx());
     for (_, rule) in rules {
         println!("Q\t{} | {:?}", rule, rule.colors);
     }

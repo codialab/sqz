@@ -75,18 +75,216 @@ pub fn encode_paths(
         }
         buf.clear();
     }
-    for (key, usage) in statistics {
-        if rules[&key].colors.len() != usage {
-            log::warn!(
-                "Used {:?} exactly {} times vs supposed {}",
-                key,
-                usage,
-                rules[&key].colors.len()
-            );
+    let mut counter_first_level = 0;
+    let mut counter_all_levels = 0;
+    let mut counter_total = 0;
+    for (key, usage) in &statistics {
+        if rules[key].colors.len() != *usage {
+            counter_all_levels += 1;
+            counter_total += (*usage as i64 - rules[key].colors.len() as i64).abs();
+            let mut has_invalid_subrule = false;
+            for subrule in &rules[key].right {
+                if *subrule >= offset && rules[&subrule.get_forward()].colors.len() != statistics[&subrule.get_forward()] {
+                    has_invalid_subrule = true;
+                }
+            }
+            if !has_invalid_subrule {
+                counter_first_level += 1;
+                log::warn!(
+                    "Used {:?} -> {:?} exactly {} times vs supposed {} (offset: {})",
+                    key,
+                    rules[key].right,
+                    usage,
+                    rules[key].colors.len(),
+                    offset
+                );
+            }
             // break;
         }
     }
+    panic!("Panicing");
+    log::info!("Incorrect first level: {}, incorrect all levels: {}, incorrect total usages: {}", counter_first_level, counter_all_levels, counter_total);
     result
+}
+
+pub fn encode_paths2(
+    file: &str,
+    rules: &Rules,
+    offset: NodeId,
+    node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
+) -> HashMap<String, Vec<NodeId>> {
+    let mut result: HashMap<String, Vec<NodeId>> = HashMap::new();
+    let mut rules_by_digram: HashMap<(NodeId, NodeId), &Rule> = HashMap::new();
+    for (_idx, rule) in rules.iter() {
+        rules_by_digram
+            .entry(canonize(rule.right[0], rule.right[1]))
+            .and_modify(|e| { panic!("Rule with same digram") })
+            .or_insert(rule);
+    }
+    let mut data = bufreader_from_compressed_gfa(file);
+    let mut statistics: HashMap<NodeId, usize> =
+        rules.iter().map(|(k, _v)| (k.clone(), 0)).collect();
+    let mut path_id = 0;
+
+    // log::error!("RBD: {:?}", rules_by_digram);
+
+    let mut buf = vec![];
+    while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+        if buf[0] == b'P' || buf[0] == b'W' {
+            let (path_seg, buf_path_seg) = match buf[0] {
+                b'P' => parse_path_identifier(&buf),
+                b'W' => parse_walk_identifier(&buf),
+                _ => unreachable!(),
+            };
+
+            let nodes = match buf[0] {
+                b'P' => get_nodes_path(buf_path_seg, node_ids_by_name),
+                b'W' => get_nodes_walk(buf_path_seg, node_ids_by_name),
+                _ => unreachable!(),
+            };
+
+            print_multiplicities(&nodes);
+            let encoded_path = encode_path2(
+                nodes,
+                &rules_by_digram,
+                &mut statistics,
+                path_id,
+                offset,
+            );
+            result.insert(path_seg.to_string(), encoded_path);
+
+            path_id += 1;
+        }
+        buf.clear();
+    }
+    let mut counter_first_level = 0;
+    let mut counter_all_levels = 0;
+    let mut counter_total = 0;
+    for (key, usage) in &statistics {
+        if rules[key].colors.len() != *usage {
+            counter_all_levels += 1;
+            counter_total += (*usage as i64 - rules[key].colors.len() as i64).abs();
+            let mut has_invalid_subrule = false;
+            for subrule in &rules[key].right {
+                if *subrule >= offset && rules[&subrule.get_forward()].colors.len() != statistics[&subrule.get_forward()] {
+                    has_invalid_subrule = true;
+                }
+            }
+            if !has_invalid_subrule {
+                counter_first_level += 1;
+                log::warn!(
+                    "Used {:?} -> {:?} exactly {} times vs supposed {} (offset: {})",
+                    key,
+                    rules[key].right,
+                    usage,
+                    rules[key].colors.len(),
+                    offset
+                );
+            }
+            // break;
+        }
+    }
+    log::info!("Incorrect first level: {}, incorrect all levels: {}, incorrect total usages: {}", counter_first_level, counter_all_levels, counter_total);
+    result
+}
+
+pub fn encode_path2(
+    nodes: Vec<NodeId>,
+    rules_by_digram: &HashMap<(NodeId, NodeId), &Rule>,
+    statistics: &mut HashMap<NodeId, usize>,
+    path_id: u64,
+    offset: NodeId,
+) -> Vec<NodeId> {
+    let mut stack: Vec<NodeId> = Vec::new();
+    let mut multiplicity_stack: Vec<(usize, usize)> = Vec::new();
+
+    let mut prev_counter = 0;
+    let mut nodes_visited_curr: HashSet<NodeId> = HashSet::new();
+    let mut curr_counter = 0;
+
+    let mut node_idx = 0;
+
+    let mut change_prev = None;
+    log::info!("Encoding path {}", path_id);
+
+    loop {
+        // log::error!("Mult: {:?}, stack: {:?}",)
+        if stack.len() >= 2 && is_rule_applicable(&(stack[stack.len() - 2], stack[stack.len() - 1]), path_id, multiplicity_stack[multiplicity_stack.len() - 1], rules_by_digram) {
+            // Remove everything
+            let second = stack.pop().unwrap();
+            let first = stack.pop().unwrap();
+            let mult = multiplicity_stack.pop().unwrap();
+
+            // Apply rule
+            let canonized = canonize(first, second);
+            let left = rules_by_digram[&canonized].left;
+            *statistics
+                .get_mut(&left)
+                .expect("statistics contains rule") += 1;
+            if canonized.0 == first {
+                stack.push(left);
+
+                if !multiplicity_stack.is_empty() {
+                    let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
+                    log::error!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
+                    change_prev = Some(old_mult.1);
+                }
+            } else {
+                stack.push(left.flip());
+
+                if !multiplicity_stack.is_empty() && node_idx < nodes.len() - 1 {
+                    let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
+                    log::error!("\tWriting backward: {:?}", (old_mult.0, mult.1));
+                    *multiplicity_stack.last_mut().expect("Mult stack has at least 1 element") = (old_mult.0, mult.1);
+                }
+            }
+        } else if node_idx < nodes.len() {
+            let curr = nodes[node_idx];
+            // Update counters
+            if change_prev.is_some() {
+                prev_counter = change_prev.unwrap();
+                change_prev = None;
+            } else {
+                prev_counter = curr_counter;
+            }
+            if nodes_visited_curr.contains(&curr.get_forward()) {
+                curr_counter += 1;
+                nodes_visited_curr.clear();
+            }
+            nodes_visited_curr.insert(curr.get_forward());
+
+            // Push to stack
+            stack.push(curr);
+            node_idx += 1;
+            if stack.len() >= 2 {
+                multiplicity_stack.push((prev_counter, curr_counter))
+            }
+        } else {
+            break;
+        }
+    }
+    stack
+}
+
+fn is_rule_applicable(
+    digram: &(NodeId, NodeId),
+    path_id: u64,
+    multiplicity: (usize, usize),
+    rules_by_digram: &HashMap<(NodeId, NodeId), &Rule>,
+) -> bool {
+    let canonized = canonize(digram.0, digram.1);
+    let canonized_multiplicity = if is_edge_flipped(digram.0, digram.1) {
+        transpose(multiplicity)
+    } else {
+        multiplicity
+    };
+    log::error!("Looking at {:?}, multiplicity {:?} (canon: {:?})", digram, multiplicity, canonized_multiplicity);
+    if let Some(rule) = rules_by_digram.get(&canonized) {
+        log::error!("\tMatching rule: {} -> {:?}, colors: {:?}", rule.left, rule.right, rule.colors);
+        rule.colors.colors.contains(path_id, canonized_multiplicity.0 as u32, canonized_multiplicity.1 as u32)
+    } else {
+        false
+    }
 }
 
 fn print_multiplicities(nodes: &Vec<NodeId>) {
@@ -95,6 +293,7 @@ fn print_multiplicities(nodes: &Vec<NodeId>) {
     let mut nodes_visited_curr: HashSet<NodeId> = HashSet::new();
     let mut curr_counter = 0;
 
+    nodes_visited_curr.insert(nodes[0].get_forward());
     nodes.iter().tuple_windows().for_each(|(prev, curr)| {
         if nodes_visited_prev.contains(&prev.get_forward()) {
             prev_counter += 1;
@@ -138,6 +337,7 @@ pub fn encode_path(
             None => {
                 stack.push(current_node);
                 nodes_visited_prev.insert(current_node.get_forward());
+                nodes_visited_curr.insert(current_node.get_forward());
             }
             Some(prev_node) => {
                 if nodes_visited_curr.contains(&current_node.get_forward()) {
@@ -185,12 +385,14 @@ pub fn encode_path(
                             && !second.is_forward()
                             && idx < nodes.len() - 1
                         {
-                            log::error!("Special case of looking to the future (non-canonical), @ {}, orig: {:?}, new: {:?}", counter, mult, (mult.0, second_counter));
+
+                            log::error!("Special case of looking to the future (non-canonical), @ {}, orig: {:?}, new: {:?}, changed to {:?}", counter, mult, (mult.0, second_counter), mult);
                             (mult.0, second_counter)
+                            // mult
                         } else {
                             mult
                         };
-                        log::error!("@ {}: using mult {:?}", counter, mult);
+                        // log::error!("@ {}: using mult {:?}", counter, mult);
                         let result = apply_rule(
                             &mut idx,
                             (first, second),
@@ -233,6 +435,15 @@ pub fn encode_path(
     stack
 }
 
+fn get_should_print_fully_generic(digram: &(NodeId, NodeId), printables: Vec<RawNodeId>) -> bool {
+    for node in printables {
+        if digram.0.get_forward() == NodeId::new(node - 1, 0) || digram.1.get_forward() == NodeId::new(node - 1, 0) {
+            return true;
+        }
+    }
+    false
+}
+
 fn apply_rule(
     idx: &mut usize,
     digram: (NodeId, NodeId),
@@ -251,9 +462,16 @@ fn apply_rule(
     offset: NodeId,
 ) -> (bool, (usize, usize)) {
     // Handle case where we epsilon := beta
+    let should_print_nodes = vec![2619, 2637];
+    // let should_print = get_should_print_fully_generic(&digram, should_print_nodes);
+    let should_print = true;
+    let canonized_digram = canonize(digram.0, digram.1);
+
     let multiplicity =
         if digram.0 >= offset && digram.0.is_forward() && !multiplicity_stack.is_empty() {
-            log::error!("Special case of looking to the past (canonical)");
+            if should_print {
+                log::error!("Special case of looking to the past (canonical), orig: {:?}, new: {:?}", multiplicity, (multiplicity_stack[multiplicity_stack.len() - 1].1, multiplicity.1));
+            }
             (
                 multiplicity_stack[multiplicity_stack.len() - 1].1,
                 multiplicity.1,
@@ -261,13 +479,16 @@ fn apply_rule(
         } else {
             multiplicity
         };
-    let canonized_digram = canonize(digram.0, digram.1);
     let canonized_multiplicity = if is_edge_flipped(digram.0, digram.1) {
         transpose(multiplicity)
     } else {
         multiplicity
     };
-    log::error!("Canonized: {:?}", canonized_digram);
+    if should_print {
+        log::error!("Canonized: {:?}, digram: {:?}, mult: {:?}, prev_c: {}, curr_c: {}", canonized_digram, digram, multiplicity, prev_counter, curr_counter);
+        log::error!("Stack: {}, {:?}", stack.len(), stack.iter().rev().collect::<Vec<_>>());
+        log::error!("Multiplicity stack: {}, {:?}", multiplicity_stack.len(), multiplicity_stack.iter().rev().collect::<Vec<_>>());
+    }
     let mut has_used_rule = false;
     for (is_end, rule) in rules_by_start
         .get(&canonized_digram)
@@ -282,38 +503,47 @@ fn apply_rule(
                 .map(|r| (true, *r)),
         )
     {
-        log::error!(
-            "\t-- Trying to work on rule: {}, with colors {:?}, mult: {:?} --",
-            rule,
-            rule.colors,
-            multiplicity
-        );
-        if rule.colors.contains(
+        if should_print {
+            log::error!(
+                "\t-- Trying to work on rule: {}, with colors {:?}, mult: {:?}, path: {} --",
+                rule,
+                rule.colors,
+                multiplicity,
+                path_id,
+            );
+        }
+        if rule.colors.colors.contains(
             path_id,
             canonized_multiplicity.0 as u32,
             canonized_multiplicity.1 as u32,
         ) {
-            log::error!("\t== Working on rule: {} ==", rule);
+            if should_print {
+                // log::error!("\t== Working on rule: {} ==", rule);
+            }
             if (!is_end && digram.0 == rule.right[0])
                 || (is_end && digram.0 == rule.right[rule.right.len() - 1].flip())
             {
                 // Exact match, continue forward
-                log::error!(
-                    "{:?} - forward match | nodes_len {} | idx {} | rule_len {}",
-                    digram,
-                    nodes.len(),
-                    idx,
-                    rule.right.len()
-                );
+                if should_print {
+                    // log::error!(
+                    //     "{:?} - forward match | nodes_len {} | idx {} | rule_len {}",
+                    //     digram,
+                    //     nodes.len(),
+                    //     idx,
+                    //     rule.right.len()
+                    // );
+                }
                 if rule.right.len() > 2 && nodes.len() > *idx + rule.right.len() - 2 {
-                    log::error!(
-                        "\tRemaining rule {:?} - {:?}, len first: {}, len second: {}, values {}, {}",
-                        &rule.right[2..],
-                        &nodes[*idx + 1..*idx + 1 + rule.right.len() - 2],
-                        rule.right[2..].len(),
-                        nodes[*idx + 1..*idx + 1 + rule.right.len() - 2].len(),
-                        *idx, rule.right.len(),
-                    );
+                    if should_print {
+                    // log::error!(
+                    //     "\tRemaining rule {:?} - {:?}, len first: {}, len second: {}, values {}, {}",
+                    //     &rule.right[2..],
+                    //     &nodes[*idx + 1..*idx + 1 + rule.right.len() - 2],
+                    //     rule.right[2..].len(),
+                    //     nodes[*idx + 1..*idx + 1 + rule.right.len() - 2].len(),
+                    //     *idx, rule.right.len(),
+                    // );
+                    }
                 }
                 if (rule.right.len() > 2
                     && !is_end
@@ -332,7 +562,9 @@ fn apply_rule(
                     } else {
                         stack.push(rule.left.flip());
                     }
-                    log::error!("\tInner forward:");
+                    if should_print {
+                    // log::error!("\tInner forward:");
+                    }
                     *statistics
                         .get_mut(&rule.left)
                         .expect("statistics contains rule") += 1;
@@ -341,13 +573,13 @@ fn apply_rule(
                     let new_idx = *idx + rule.right.len() - 2;
                     for i in *idx + 1..=new_idx {
                         if nodes_visited_curr.contains(&nodes[i].get_forward()) {
-                            log::error!("= Resetting inside curr =");
+                            // log::error!("= Resetting inside curr =");
                             *curr_counter += 1;
                             nodes_visited_curr.clear();
                         }
                         nodes_visited_curr.insert(nodes[i].get_forward());
                         if nodes_visited_prev.contains(&nodes[i].get_forward()) {
-                            log::error!("= Resetting inside prev =");
+                            // log::error!("= Resetting inside prev =");
                             *prev_counter += 1;
                             nodes_visited_prev.clear()
                         }
@@ -361,25 +593,29 @@ fn apply_rule(
             {
                 // Reverse match continue backward
                 let rule_remaining_len = rule.right.len() - 2;
-                log::error!(
-                    "{:?} - backward match, is_end: {},  rule_remaining_len {}, stack {} -> {} {}",
-                    digram,
-                    is_end,
-                    rule_remaining_len,
-                    stack.len(),
-                    rule_remaining_len > 0,
-                    stack.len() >= 1 + rule_remaining_len
-                );
+                if should_print {
+                    // log::error!(
+                    //     "{:?} - backward match, is_end: {},  rule_remaining_len {}, stack {} -> {} {}",
+                    //     digram,
+                    //     is_end,
+                    //     rule_remaining_len,
+                    //     stack.len(),
+                    //     rule_remaining_len > 0,
+                    //     stack.len() >= 1 + rule_remaining_len
+                    // );
+                }
                 if rule_remaining_len > 0 && stack.len() >= rule_remaining_len {
-                    log::error!(
-                        "Remaining rule {:?} - {:?}, is_end: {}, stack_len: {}, {:?} - {:?}",
-                        &rule.right[2..],
-                        reverse_rule(&stack[stack.len() - rule_remaining_len..].to_vec()),
-                        is_end,
-                        stack.len() >= rule_remaining_len,
-                        &rule.right[..rule_remaining_len],
-                        &stack[stack.len() - rule_remaining_len..]
-                    );
+                    if should_print {
+                        // log::error!(
+                        //     "Remaining rule {:?} - {:?}, is_end: {}, stack_len: {}, {:?} - {:?}",
+                        //     &rule.right[2..],
+                        //     reverse_rule(&stack[stack.len() - rule_remaining_len..].to_vec()),
+                        //     is_end,
+                        //     stack.len() >= rule_remaining_len,
+                        //     &rule.right[..rule_remaining_len],
+                        //     &stack[stack.len() - rule_remaining_len..]
+                        // );
+                    }
                 }
                 if (rule_remaining_len == 0)
                     || (rule_remaining_len > 0
@@ -393,7 +629,9 @@ fn apply_rule(
                         && rule.right[..rule_remaining_len]
                             == stack[stack.len() - rule_remaining_len..])
                 {
-                    log::error!("\tInner backward");
+                    if should_print {
+                        // log::error!("\tInner backward");
+                    }
                     for _ in 0..rule_remaining_len {
                         stack.pop();
                         multiplicity_stack.pop();
@@ -412,13 +650,15 @@ fn apply_rule(
                 }
             }
         } else {
-            log::error!(
-                "\tNo color match: color: {:?}, {} | {} | {}",
-                rule.colors,
-                path_id,
-                multiplicity.0,
-                multiplicity.1
-            );
+            if should_print {
+                // log::error!(
+                //     "\tNo color match: color: {:?}, {} | {} | {}",
+                //     rule.colors,
+                //     path_id,
+                //     multiplicity.0,
+                //     multiplicity.1
+                // );
+            }
         }
     }
     (has_used_rule, multiplicity)

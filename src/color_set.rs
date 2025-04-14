@@ -114,6 +114,14 @@ impl ColorSet {
         }
     }
 
+    pub fn flip_all(&mut self) {
+        for (_, v) in self.0.iter_mut() {
+            for entry in v.iter_mut() {
+                *entry = transpose(*entry);
+            }
+        }
+    }
+
     pub fn contains(
         &self,
         path_id: PathId,
@@ -233,13 +241,19 @@ impl ColorSet {
     pub fn self_vy_intersection(
         &self,
         mutate_outgoing: &HashMap<(PathId, Multiplicity), Multiplicity>,
+        is_vn_flipped: bool,
+        is_qn_flipped: bool,
     ) -> (ColorSet, ColorSet) {
         let mut new_qn_set = ColorSet::new();
         let mut new_vn_set = ColorSet::new();
         for path in self.0.keys() {
             for multiplicity in &self.0[path] {
-                if let Some(replacement) = mutate_outgoing.get(&(*path, multiplicity.0)) {
-                    new_qn_set.insert(*path, (*replacement, multiplicity.1));
+                if let Some(replacement) = mutate_outgoing.get(&(*path, if !is_qn_flipped { multiplicity.0 } else { multiplicity.1 })) {
+                    if !is_qn_flipped {
+                        new_qn_set.insert(*path, (*replacement, multiplicity.1));
+                    } else {
+                        new_qn_set.insert(*path, (multiplicity.0, *replacement));
+                    }
                 } else {
                     new_vn_set.insert(*path, *multiplicity);
                 }
@@ -251,8 +265,8 @@ impl ColorSet {
     pub fn sectionize(
         &self,
         mutate_outgoing: &mut HashMap<(PathId, Multiplicity), Multiplicity>,
-    ) -> (ColorSet, ColorSet) {
-        let (qq_set, qv_set): (HashMap<_, _>, HashMap<_, _>) = self
+    ) -> (ColorSet, ColorSet, ColorSet) {
+        let (qq_set, (qv_set, uv_set)): (HashMap<_, _>, (HashMap<_, _>, HashMap<_, _>)) = self
             .0
             .iter()
             .map(|(path, v)| {
@@ -272,7 +286,7 @@ impl ColorSet {
                         }
                     });
                 sections.push(current_section);
-                let (qq_set, qv_set): (Vec<_>, Vec<_>) = sections
+                let (qq_set, (qv_set, uv_set)): (Vec<_>, (Vec<_>, Vec<_>)) = sections
                     .into_iter()
                     .map(|mut section| {
                         if section[0].0 > section[0].1 {
@@ -281,12 +295,15 @@ impl ColorSet {
                             section.sort();
                         }
                         let mut merged = Vec::new();
+                        let mut first_ones = Vec::new();
                         let mut is_odd = false;
                         section.chunks(2).for_each(|chunk| {
                             if chunk.len() == 2 {
                                 merged.push((chunk[0].0, chunk[1].1));
+                                first_ones.push(chunk[0]);
                             } else {
                                 mutate_outgoing.insert((*path, chunk[0].1), chunk[0].0);
+                                first_ones.push(chunk[0]);
                                 is_odd = true;
                             }
                         });
@@ -295,20 +312,22 @@ impl ColorSet {
                         } else {
                             merged.split_off(merged.len() - 1)
                         };
-                        (merged, last_one)
+                        (merged, (last_one, first_ones))
                     })
                     .unzip();
                 let qq_set: Vec<(u32, u32)> = qq_set.into_iter().flatten().collect();
                 let qv_set: Vec<(u32, u32)> = qv_set.into_iter().flatten().collect();
-                ((*path, qq_set), (*path, qv_set))
+                let uv_set: Vec<(u32, u32)> = uv_set.into_iter().flatten().collect();
+                ((*path, qq_set), ((*path, qv_set), (*path, uv_set)))
             })
             .unzip();
 
         // Remove entries for paths without multiplicities
         let qq_set = qq_set.into_iter().filter(|(_, v)| !v.is_empty()).collect();
         let qv_set = qv_set.into_iter().filter(|(_, v)| !v.is_empty()).collect();
+        let uv_set = uv_set.into_iter().filter(|(_, v)| !v.is_empty()).collect();
 
-        (ColorSet(qq_set), ColorSet(qv_set))
+        (ColorSet(qq_set), ColorSet(qv_set), ColorSet(uv_set))
     }
 }
 
@@ -337,6 +356,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_flip_all() {
+        let mut c = ColorSet(HashMap::from([(
+            0,
+            vec![(9, 8), (1, 3)],
+        ), (1, vec![(0, 4), (7, 12)])]));
+        c.flip_all();
+        assert_eq!(c, ColorSet(HashMap::from([(
+            0,
+            vec![(8, 9), (3, 1)],
+        ), (1, vec![(4, 0), (12, 7)])])));
+    }
+
+    #[test]
     fn test_ord_len_self() {
         let c = ColorSet(HashMap::from([(
             0,
@@ -360,7 +392,7 @@ mod tests {
     fn test_self_vy_contained() {
         let c = ColorSet(HashMap::from([(0, vec![(3, 3)])]));
         let mutate_outgoing = HashMap::from([((0, 3), 2)]);
-        let (qn_set, vn_set) = c.self_vy_intersection(&mutate_outgoing);
+        let (qn_set, vn_set) = c.self_vy_intersection(&mutate_outgoing, false, false);
         assert_eq!(qn_set, ColorSet(HashMap::from([(0, vec![(2, 3)])])));
         assert_eq!(vn_set, ColorSet(HashMap::new()));
     }
@@ -369,7 +401,7 @@ mod tests {
     fn test_self_vy_not_contained() {
         let c = ColorSet(HashMap::from([(0, vec![(3, 3)])]));
         let mutate_outgoing = HashMap::new();
-        let (qn_set, vn_set) = c.self_vy_intersection(&mutate_outgoing);
+        let (qn_set, vn_set) = c.self_vy_intersection(&mutate_outgoing, false, false);
         assert_eq!(qn_set, ColorSet(HashMap::new()));
         assert_eq!(vn_set, ColorSet(HashMap::from([(0, vec![(3, 3)])])));
     }
@@ -381,7 +413,7 @@ mod tests {
             vec![(1, 2), (2, 3), (3, 6), (6, 7), (7, 8)],
         )]));
         let mut mutate_outgoing = HashMap::new();
-        let (qq_set, qv_set) = c.sectionize(&mut mutate_outgoing);
+        let (qq_set, qv_set, _) = c.sectionize(&mut mutate_outgoing);
         assert_eq!(qq_set, ColorSet(HashMap::from([(0, vec![(1, 3), (3, 7)])])));
         assert_eq!(qv_set, ColorSet::new());
         assert_eq!(mutate_outgoing, HashMap::from([((0, 8), 7)]));
@@ -394,7 +426,7 @@ mod tests {
             vec![(1, 2), (2, 3), (3, 6), (6, 7), (7, 8), (8, 9)],
         )]));
         let mut mutate_outgoing = HashMap::new();
-        let (qq_set, qv_set) = c.sectionize(&mut mutate_outgoing);
+        let (qq_set, qv_set, _) = c.sectionize(&mut mutate_outgoing);
         assert_eq!(qq_set, ColorSet(HashMap::from([(0, vec![(1, 3), (3, 7)])])));
         assert_eq!(qv_set, ColorSet(HashMap::from([(0, vec![(7, 9)])])));
         assert_eq!(mutate_outgoing, HashMap::new());
@@ -407,7 +439,7 @@ mod tests {
             vec![(8, 7), (7, 6), (6, 3), (3, 2), (2, 1)],
         )]));
         let mut mutate_outgoing = HashMap::new();
-        let (qq_set, qv_set) = c.sectionize(&mut mutate_outgoing);
+        let (qq_set, qv_set, _) = c.sectionize(&mut mutate_outgoing);
         assert_eq!(qq_set, ColorSet(HashMap::from([(0, vec![(8, 6), (6, 2)])])));
         assert_eq!(qv_set, ColorSet::new());
         assert_eq!(mutate_outgoing, HashMap::from([((0, 1), 2)]));
@@ -420,7 +452,7 @@ mod tests {
             vec![(9, 8), (8, 7), (7, 6), (6, 3), (3, 2), (2, 1)],
         )]));
         let mut mutate_outgoing = HashMap::new();
-        let (qq_set, qv_set) = c.sectionize(&mut mutate_outgoing);
+        let (qq_set, qv_set, _) = c.sectionize(&mut mutate_outgoing);
         assert_eq!(qq_set, ColorSet(HashMap::from([(0, vec![(9, 7), (7, 3)])])));
         assert_eq!(qv_set, ColorSet(HashMap::from([(0, vec![(3, 1)])])));
         assert_eq!(mutate_outgoing, HashMap::new());
@@ -433,7 +465,7 @@ mod tests {
             vec![(9, 8), (8, 7), (7, 6), (1, 2), (2, 3)],
         )]));
         let mut mutate_outgoing = HashMap::new();
-        let (qq_set, qv_set) = c.sectionize(&mut mutate_outgoing);
+        let (qq_set, qv_set, _) = c.sectionize(&mut mutate_outgoing);
         assert_eq!(qq_set, ColorSet(HashMap::from([(0, vec![(9, 7)])])));
         assert_eq!(qv_set, ColorSet(HashMap::from([(0, vec![(1, 3)])])));
         assert_eq!(mutate_outgoing, HashMap::from([((0, 6), 7)]));
