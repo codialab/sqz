@@ -5,8 +5,7 @@ mod parser;
 mod path_segment;
 
 use clap::Parser;
-use color_set::{ColorSet, OrdColorSet};
-use compressor::encode_paths;
+use color_set::OrdColorSet;
 use compressor::encode_paths2;
 use node_id::{NodeId, RawNodeId};
 use parser::{canonize, parse_gfa_paths_walks, parse_node_ids};
@@ -227,15 +226,15 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             let (mut new_vn_set, mut qn_set) = if u != v {
                 uv_color_set.colors.vy_intersection(
                     &vn_set.colors,
-                    &mutation_outgoing,
+                    true,
                     is_vn_flipped,
                     is_qn_flipped,
                 )
             } else {
-                let dont_mutate = HashMap::new();
+                // let dont_mutate = HashMap::new();
                 uv_color_set.colors.vy_intersection(
                     &vn_set.colors,
-                    &dont_mutate,
+                    false,
                     is_vn_flipped,
                     is_qn_flipped,
                 )
@@ -256,7 +255,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             // Reduce qn_set further to only include the edge only in the case that it was an odd number of self-loops
             if u == v {
-                log::error!("Running on qn_set: {} -> {} {}, n: {}, old_qn: {:?}", non_terminal, u, v, n, qn_set);
+                log::error!("Running on qn_set: {} -> {} {}, n: {}, old_qn: {:?}, mutation: {:?}", non_terminal, u, v, n, qn_set, mutation_outgoing);
                 let (new_qn_set, vn_set_addition) = qn_set.self_vy_intersection(&mutation_outgoing, is_vn_flipped, is_qn_flipped);
                 qn_set = new_qn_set;
                 new_vn_set.add_addition(vn_set_addition);

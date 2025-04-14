@@ -188,7 +188,7 @@ impl ColorSet {
     pub fn vy_intersection(
         &self,
         vy_set: &Self,
-        mutate_outgoing: &HashMap<(PathId, Multiplicity), Multiplicity>,
+        mutating: bool,
         is_vy_flipped: bool,
         is_qy_flipped: bool,
     ) -> (ColorSet, ColorSet) {
@@ -206,15 +206,15 @@ impl ColorSet {
                     for uv_step in uv_path_entry {
                         if corrected_vy_step.0 == uv_step.1 {
                             was_vy_step_used = true;
-                            if let Some(beta) = mutate_outgoing.get(&(*path, uv_step.1)) {
+                            if mutating {
                                 new_qy_set.insert(
                                     *path,
                                     if is_qy_flipped {
-                                        (corrected_vy_step.1, *beta)
+                                        (corrected_vy_step.1, uv_step.0)
                                     } else {
-                                        (*beta, corrected_vy_step.1)
+                                        (uv_step.0, corrected_vy_step.1)
                                     },
-                                )
+                                );
                             } else {
                                 new_qy_set.insert(
                                     *path,
@@ -521,7 +521,7 @@ mod tests {
         let mut vy = ColorSet::from(0, 3, 4);
         vy.insert(0, (2, 3));
         let uv = ColorSet::from(0, 2, 3);
-        let (new_vy, new_qy) = uv.vy_intersection(&vy, &HashMap::new(), false, false);
+        let (new_vy, new_qy) = uv.vy_intersection(&vy, false, false, false);
         assert_eq!(new_vy, ColorSet::from(0, 2, 3));
         assert_eq!(new_qy, ColorSet::from(0, 3, 4));
     }
@@ -531,7 +531,7 @@ mod tests {
         let mut vy = ColorSet::from(0, 4, 3);
         vy.insert(0, (3, 2));
         let uv = ColorSet::from(0, 2, 3);
-        let (new_vy, new_qy) = uv.vy_intersection(&vy, &HashMap::new(), true, false);
+        let (new_vy, new_qy) = uv.vy_intersection(&vy, false, true, false);
         assert_eq!(new_vy, ColorSet::from(0, 3, 2));
         assert_eq!(new_qy, ColorSet::from(0, 3, 4));
     }
@@ -541,7 +541,7 @@ mod tests {
         let mut vy = ColorSet::from(0, 3, 4);
         vy.insert(0, (2, 3));
         let uv = ColorSet::from(0, 2, 3);
-        let (new_vy, new_qy) = uv.vy_intersection(&vy, &HashMap::new(), false, true);
+        let (new_vy, new_qy) = uv.vy_intersection(&vy, false, false, true);
         assert_eq!(new_vy, ColorSet::from(0, 2, 3));
         assert_eq!(new_qy, ColorSet::from(0, 4, 3));
     }
@@ -551,7 +551,7 @@ mod tests {
         let mut vy = ColorSet::from(0, 4, 3);
         vy.insert(0, (3, 2));
         let uv = ColorSet::from(0, 2, 3);
-        let (new_vy, new_qy) = uv.vy_intersection(&vy, &HashMap::new(), true, true);
+        let (new_vy, new_qy) = uv.vy_intersection(&vy, false, true, true);
         assert_eq!(new_vy, ColorSet::from(0, 3, 2));
         assert_eq!(new_qy, ColorSet::from(0, 4, 3));
     }
@@ -562,7 +562,7 @@ mod tests {
         vy.insert(0, (2, 3));
         let uv = ColorSet::from(0, 2, 3);
         let mutate_outgoing = HashMap::from([((0, 3), 7)]);
-        let (new_vy, new_qy) = uv.vy_intersection(&vy, &mutate_outgoing, false, false);
+        let (new_vy, new_qy) = uv.vy_intersection(&vy, true, false, false);
         assert_eq!(new_vy, ColorSet::from(0, 2, 3));
         assert_eq!(new_qy, ColorSet::from(0, 7, 4));
     }
@@ -573,7 +573,7 @@ mod tests {
         vy.insert(0, (2, 3));
         let uv = ColorSet::from(0, 2, 3);
         let mutate_outgoing = HashMap::from([((0, 3), 7)]);
-        let (new_vy, new_qy) = uv.vy_intersection(&vy, &mutate_outgoing, false, true);
+        let (new_vy, new_qy) = uv.vy_intersection(&vy, true, false, true);
         assert_eq!(new_vy, ColorSet::from(0, 2, 3));
         assert_eq!(new_qy, ColorSet::from(0, 4, 7));
     }
