@@ -126,7 +126,6 @@ pub fn parse_path_seq(
     // Set the counter before setting the orientation to not take the orientation into account
     let mut prev_node = NodeId::new(prev_node, orientation);
 
-
     nodes_visited_curr.insert(prev_node.get_forward());
     println!("Inserting {} into {:?}", prev_node, nodes_visited_curr);
     print!("{}", prev_node);
@@ -140,14 +139,16 @@ pub fn parse_path_seq(
 
             let current_node = NodeId::new(current_node, orientation);
 
-            if nodes_visited_curr.contains(&current_node.get_forward()) {
-                curr_counter += 1;
-                nodes_visited_curr.clear();
-            }
-            if nodes_visited_prev.contains(&prev_node.get_forward()) {
-                prev_counter += 1;
-                nodes_visited_prev.clear();
-            }
+            prev_counter = curr_counter;
+            curr_counter += 1;
+            // if nodes_visited_curr.contains(&current_node.get_forward()) {
+            //     curr_counter += 1;
+            //     nodes_visited_curr.clear();
+            // }
+            // if nodes_visited_prev.contains(&prev_node.get_forward()) {
+            //     prev_counter += 1;
+            //     nodes_visited_prev.clear();
+            // }
             nodes_visited_curr.insert(current_node.get_forward());
             nodes_visited_prev.insert(prev_node.get_forward());
 

@@ -25,7 +25,7 @@ pub fn encode_paths2(
     for (_idx, rule) in rules.iter() {
         rules_by_digram
             .entry(canonize(rule.right[0], rule.right[1]))
-            .and_modify(|_| { panic!("Rule with same digram") })
+            .and_modify(|_| panic!("Rule with same digram"))
             .or_insert(rule);
     }
     let mut data = bufreader_from_compressed_gfa(file);
@@ -51,13 +51,8 @@ pub fn encode_paths2(
             };
 
             print_multiplicities(&nodes);
-            let encoded_path = encode_path2(
-                nodes,
-                &rules_by_digram,
-                &mut statistics,
-                path_id,
-                offset,
-            );
+            let encoded_path =
+                encode_path2(nodes, &rules_by_digram, &mut statistics, path_id, offset);
             result.insert(path_seg.to_string(), encoded_path);
 
             path_id += 1;
@@ -73,7 +68,10 @@ pub fn encode_paths2(
             counter_total += (*usage as i64 - rules[key].colors.len() as i64).abs();
             let mut has_invalid_subrule = false;
             for subrule in &rules[key].right {
-                if *subrule >= offset && rules[&subrule.get_forward()].colors.len() != statistics[&subrule.get_forward()] {
+                if *subrule >= offset
+                    && rules[&subrule.get_forward()].colors.len()
+                        != statistics[&subrule.get_forward()]
+                {
                     has_invalid_subrule = true;
                 }
             }
@@ -91,7 +89,12 @@ pub fn encode_paths2(
             // break;
         }
     }
-    log::info!("Incorrect first level: {}, incorrect all levels: {}, incorrect total usages: {}", counter_first_level, counter_all_levels, counter_total);
+    log::warn!(
+        "Incorrect first level: {}, incorrect all levels: {}, incorrect total usages: {}",
+        counter_first_level,
+        counter_all_levels,
+        counter_total
+    );
     result
 }
 
@@ -116,7 +119,14 @@ pub fn encode_path2(
 
     loop {
         // log::error!("Mult: {:?}, stack: {:?}", multiplicity_stack, stack);
-        if stack.len() >= 2 && is_rule_applicable(&(stack[stack.len() - 2], stack[stack.len() - 1]), path_id, multiplicity_stack[multiplicity_stack.len() - 1], rules_by_digram) {
+        if stack.len() >= 2
+            && is_rule_applicable(
+                &(stack[stack.len() - 2], stack[stack.len() - 1]),
+                path_id,
+                multiplicity_stack[multiplicity_stack.len() - 1],
+                rules_by_digram,
+            )
+        {
             // Remove everything
             let second = stack.pop().unwrap();
             let first = stack.pop().unwrap();
@@ -125,30 +135,32 @@ pub fn encode_path2(
             // Apply rule
             let canonized = canonize(first, second);
             let left = rules_by_digram[&canonized].left;
-            *statistics
-                .get_mut(&left)
-                .expect("statistics contains rule") += 1;
+            *statistics.get_mut(&left).expect("statistics contains rule") += 1;
             if canonized.0 == first {
                 stack.push(left);
 
                 if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    // log::error!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
+                    log::error!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
                     change_prev = Some(old_mult.1);
                 } else {
-                    // log::error!("Wanting to write forward, but cannot");
+                    log::error!("Wanting to write forward, but cannot");
                 }
             } else {
                 stack.push(left.flip());
 
-                if !multiplicity_stack.is_empty() && node_idx < nodes.len() - 1 {
+                if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    // log::error!("\tWriting backward: {:?}", (old_mult.0, mult.1));
-                    *multiplicity_stack.last_mut().expect("Mult stack has at least 1 element") = (old_mult.0, mult.1);
+                    log::error!("\tWriting backward: {:?}", (old_mult.0, mult.1));
+                    *multiplicity_stack
+                        .last_mut()
+                        .expect("Mult stack has at least 1 element") = (old_mult.0, mult.1);
                 } else if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    // log::error!("Writing backward over the end, er: {}, mult: {:?}, ", curr_counter, mult);
-                    *multiplicity_stack.last_mut().expect("Mult stack has at least 1 element") = (old_mult.0, curr_counter);
+                    log::error!("Writing backward over the end, er: {}, mult: {:?}, ", curr_counter, mult);
+                    *multiplicity_stack
+                        .last_mut()
+                        .expect("Mult stack has at least 1 element") = (old_mult.0, curr_counter);
                 }
             }
         } else if node_idx < nodes.len() {
@@ -160,11 +172,14 @@ pub fn encode_path2(
             } else {
                 prev_counter = curr_counter;
             }
-            if nodes_visited_curr.contains(&curr.get_forward()) {
+            if !stack.is_empty() {
                 curr_counter += 1;
-                nodes_visited_curr.clear();
             }
-            nodes_visited_curr.insert(curr.get_forward());
+            // if nodes_visited_curr.contains(&curr.get_forward()) {
+            //     curr_counter += 1;
+            //     nodes_visited_curr.clear();
+            // }
+            // nodes_visited_curr.insert(curr.get_forward());
 
             // Push to stack
             stack.push(curr);
@@ -191,10 +206,32 @@ fn is_rule_applicable(
     } else {
         multiplicity
     };
-    // log::error!("Looking at {:?}, multiplicity {:?} (canon: {:?})", digram, multiplicity, canonized_multiplicity);
+    log::debug!(
+        "Looking at {:?}, multiplicity {:?} (canon: {:?})",
+        digram,
+        multiplicity,
+        canonized_multiplicity
+    );
     if let Some(rule) = rules_by_digram.get(&canonized) {
-        // log::error!("\tMatching rule: {} -> {:?}, colors: {:?}", rule.left, rule.right, rule.colors);
-        rule.colors.colors.contains(path_id, canonized_multiplicity.0 as u32, canonized_multiplicity.1 as u32)
+        log::debug!(
+            "\tMatching rule: {} -> {:?}, colors: {:?}",
+            rule.left,
+            rule.right,
+            rule.colors
+        );
+        log::debug!(
+            "\tMatched: {}",
+            rule.colors.colors.contains(
+                path_id,
+                canonized_multiplicity.0 as u32,
+                canonized_multiplicity.1 as u32
+            )
+        );
+        rule.colors.colors.contains(
+            path_id,
+            canonized_multiplicity.0 as u32,
+            canonized_multiplicity.1 as u32,
+        )
     } else {
         false
     }
@@ -208,16 +245,18 @@ fn print_multiplicities(nodes: &Vec<NodeId>) {
 
     nodes_visited_curr.insert(nodes[0].get_forward());
     nodes.iter().tuple_windows().for_each(|(prev, curr)| {
-        if nodes_visited_prev.contains(&prev.get_forward()) {
-            prev_counter += 1;
-            nodes_visited_prev.clear();
-        }
-        nodes_visited_prev.insert(prev.get_forward());
-        if nodes_visited_curr.contains(&curr.get_forward()) {
-            // log::error!("= Resetting outside curr =");
-            curr_counter += 1;
-            nodes_visited_curr.clear();
-        }
+        prev_counter = curr_counter;
+        curr_counter += 1;
+        // if nodes_visited_prev.contains(&prev.get_forward()) {
+        //     prev_counter += 1;
+        //     nodes_visited_prev.clear();
+        // }
+        // nodes_visited_prev.insert(prev.get_forward());
+        // if nodes_visited_curr.contains(&curr.get_forward()) {
+        //     // log::error!("= Resetting outside curr =");
+        //     curr_counter += 1;
+        //     nodes_visited_curr.clear();
+        // }
         nodes_visited_curr.insert(curr.get_forward());
         print!("{}-({}|{})-", prev, prev_counter, curr_counter);
     });
