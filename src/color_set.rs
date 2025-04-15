@@ -142,6 +142,13 @@ impl ColorSet {
         Self(HashMap::new())
     }
 
+    pub fn cleanup_pre_self_loop(&mut self, uv_set: &Self) {
+        // Filter out any that are not part of new self loop, at the same time directly apply mutation
+        self.0
+            .iter_mut()
+            .for_each(|(path, v)| v.retain_mut(|entry| uv_set.0.contains_key(path) && uv_set.0[path].iter().any(|(uv_first, uv_second)| { if entry.0 == *uv_second { *entry = (*uv_first, entry.1); true } else { false } })));
+    }
+
     pub fn xu_intersection(
         &self,
         xu_set: &Self,
@@ -271,6 +278,9 @@ impl ColorSet {
             .iter()
             .map(|(path, v)| {
                 let mut multiplicities = v.to_owned();
+                if multiplicities.is_empty() {
+                    return ((*path, Vec::new()), ((*path, Vec::new()), (*path, Vec::new())))
+                }
                 multiplicities.sort();
                 let mut sections = Vec::new();
                 let mut current_section = vec![multiplicities[0]];

@@ -84,7 +84,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         let mut new_uv_set = None;
 
         // let should_print = non_terminal == NodeId::new(11, 0) || non_terminal == NodeId::new(8, 0) || non_terminal == NodeId::new(9, 0) || non_terminal == NodeId::new(10, 0); //(u.get_forward() == NodeId::new(9, 0) && v.get_forward() == NodeId::new(991, 0)) || (u.get_forward() == NodeId::new(987, 0) && v.get_forward() == NodeId::new(989, 0));
-        let should_print = true;
+        let should_print = false;
 
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
@@ -136,10 +136,12 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             if n == v && u != v {
                 if should_print {
+                    println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                    println!("non_terminal: {}, nq_set: {:?}, mut: {:?}", non_terminal, nq_set, mutation_outgoing);
+                    println!("uv: {:?}, new_nq: {:?}", uv_color_set, nq_set);
+                    println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
                 }
-                println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-                println!("non_terminal: {}, nq_set: {:?}", non_terminal, nq_set);
-                println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                nq_set.cleanup_pre_self_loop(&uv_color_set.colors);
                 if is_nq_flipped == is_edge_flipped(non_terminal, non_terminal) {
                     digrams.push(
                         canonize(non_terminal, non_terminal),
@@ -164,9 +166,9 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         }
 
         let mut self_sets = if u == v {
-            log::debug!("Self loop case: {} -> {} - {}, uv: {:?}", non_terminal, u, v, uv_color_set);
+            log::debug!("Self loop case: {} -> {} - {}", non_terminal, u, v);
             let self_sets = uv_color_set.colors.sectionize(&mut mutation_outgoing);
-            log::error!("Self loop contents: qq: {:?}, qv: {:?}, uv: {:?}", self_sets.0, self_sets.1, self_sets.2);
+            // log::error!("Self loop contents: qq: {:?}, qv: {:?}, uv: {:?}", self_sets.0, self_sets.1, self_sets.2);
             Some(self_sets)
         } else {
             None
@@ -255,11 +257,11 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             // Reduce qn_set further to only include the edge only in the case that it was an odd number of self-loops
             if u == v {
-                log::error!("Running on qn_set: {} -> {} {}, n: {}, old_qn: {:?}, mutation: {:?}", non_terminal, u, v, n, qn_set, mutation_outgoing);
+                // log::error!("Running on qn_set: {} -> {} {}, n: {}, old_qn: {:?}, mutation: {:?}", non_terminal, u, v, n, qn_set, mutation_outgoing);
                 let (new_qn_set, vn_set_addition) = qn_set.self_vy_intersection(&mutation_outgoing, is_vn_flipped, is_qn_flipped);
                 qn_set = new_qn_set;
                 new_vn_set.add_addition(vn_set_addition);
-                log::error!("Running on qn_set: qn: {:?}, new_vn_set: {:?}", qn_set, new_vn_set);
+                // log::error!("Running on qn_set: qn: {:?}, new_vn_set: {:?}", qn_set, new_vn_set);
             }
 
             if qn_set.is_empty() {

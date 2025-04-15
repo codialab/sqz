@@ -115,7 +115,7 @@ pub fn encode_path2(
     log::info!("Encoding path {}", path_id);
 
     loop {
-        log::error!("Mult: {:?}, stack: {:?}", multiplicity_stack, stack);
+        // log::error!("Mult: {:?}, stack: {:?}", multiplicity_stack, stack);
         if stack.len() >= 2 && is_rule_applicable(&(stack[stack.len() - 2], stack[stack.len() - 1]), path_id, multiplicity_stack[multiplicity_stack.len() - 1], rules_by_digram) {
             // Remove everything
             let second = stack.pop().unwrap();
@@ -133,21 +133,21 @@ pub fn encode_path2(
 
                 if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::error!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
+                    // log::error!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
                     change_prev = Some(old_mult.1);
                 } else {
-                    log::error!("Wanting to write forward, but cannot");
+                    // log::error!("Wanting to write forward, but cannot");
                 }
             } else {
                 stack.push(left.flip());
 
                 if !multiplicity_stack.is_empty() && node_idx < nodes.len() - 1 {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::error!("\tWriting backward: {:?}", (old_mult.0, mult.1));
+                    // log::error!("\tWriting backward: {:?}", (old_mult.0, mult.1));
                     *multiplicity_stack.last_mut().expect("Mult stack has at least 1 element") = (old_mult.0, mult.1);
                 } else if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::error!("Writing backward over the end, er: {}, mult: {:?}, ", curr_counter, mult);
+                    // log::error!("Writing backward over the end, er: {}, mult: {:?}, ", curr_counter, mult);
                     *multiplicity_stack.last_mut().expect("Mult stack has at least 1 element") = (old_mult.0, curr_counter);
                 }
             }
@@ -191,9 +191,9 @@ fn is_rule_applicable(
     } else {
         multiplicity
     };
-    log::error!("Looking at {:?}, multiplicity {:?} (canon: {:?})", digram, multiplicity, canonized_multiplicity);
+    // log::error!("Looking at {:?}, multiplicity {:?} (canon: {:?})", digram, multiplicity, canonized_multiplicity);
     if let Some(rule) = rules_by_digram.get(&canonized) {
-        log::error!("\tMatching rule: {} -> {:?}, colors: {:?}", rule.left, rule.right, rule.colors);
+        // log::error!("\tMatching rule: {} -> {:?}, colors: {:?}", rule.left, rule.right, rule.colors);
         rule.colors.colors.contains(path_id, canonized_multiplicity.0 as u32, canonized_multiplicity.1 as u32)
     } else {
         false
