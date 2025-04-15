@@ -283,7 +283,11 @@ impl ColorSet {
                         new_qn_set.insert(*path, (multiplicity.0, *replacement));
                     }
                 } else {
-                    new_vn_set.insert(*path, *multiplicity);
+                    if is_qn_flipped == is_vn_flipped {
+                        new_vn_set.insert(*path, *multiplicity);
+                    } else {
+                        new_vn_set.insert(*path, transpose(*multiplicity));
+                    }
                 }
             }
         }

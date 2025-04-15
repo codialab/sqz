@@ -141,23 +141,23 @@ pub fn encode_path2(
 
                 if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::error!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
+                    log::debug!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
                     change_prev = Some(old_mult.1);
                 } else {
-                    log::error!("Wanting to write forward, but cannot");
+                    log::debug!("Wanting to write forward, but cannot");
                 }
             } else {
                 stack.push(left.flip());
 
                 if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::error!("\tWriting backward: {:?}", (old_mult.0, mult.1));
+                    log::debug!("\tWriting backward: {:?}", (old_mult.0, mult.1));
                     *multiplicity_stack
                         .last_mut()
                         .expect("Mult stack has at least 1 element") = (old_mult.0, mult.1);
                 } else if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::error!("Writing backward over the end, er: {}, mult: {:?}, ", curr_counter, mult);
+                    log::debug!("Writing backward over the end, er: {}, mult: {:?}, ", curr_counter, mult);
                     *multiplicity_stack
                         .last_mut()
                         .expect("Mult stack has at least 1 element") = (old_mult.0, curr_counter);

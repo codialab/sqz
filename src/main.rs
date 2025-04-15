@@ -83,7 +83,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         let mut new_uv_set = None;
 
         // let should_print = non_terminal == NodeId::new(11, 0) || non_terminal == NodeId::new(8, 0) || non_terminal == NodeId::new(9, 0) || non_terminal == NodeId::new(10, 0); //(u.get_forward() == NodeId::new(9, 0) && v.get_forward() == NodeId::new(991, 0)) || (u.get_forward() == NodeId::new(987, 0) && v.get_forward() == NodeId::new(989, 0));
-        let should_print = true;
+        let should_print = false;
 
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
@@ -256,12 +256,12 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             // Reduce qn_set further to only include the edge only in the case that it was an odd number of self-loops
             if u == v {
-                // log::error!("Running on qn_set: {} -> {} {}, n: {}, old_qn: {:?}, mutation: {:?}", non_terminal, u, v, n, qn_set, mutation_outgoing);
+                log::debug!("Running on qn_set: {} -> {} {}, n: {}, old_qn: {:?}, mutation: {:?}", non_terminal, u, v, n, qn_set, mutation_outgoing);
                 let (new_qn_set, vn_set_addition) =
                     qn_set.self_vy_intersection(&mutation_outgoing, is_vn_flipped, is_qn_flipped);
                 qn_set = new_qn_set;
                 new_vn_set.add_addition(vn_set_addition);
-                // log::error!("Running on qn_set: qn: {:?}, new_vn_set: {:?}", qn_set, new_vn_set);
+                log::debug!("Running on qn_set: qn: {:?}, new_vn_set: {:?}", qn_set, new_vn_set);
             }
 
             if qn_set.is_empty() {

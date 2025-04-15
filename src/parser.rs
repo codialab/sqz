@@ -190,7 +190,7 @@ pub fn get_nodes_path(data: &[u8], node_ids_by_name: &HashMap<Vec<u8>, RawNodeId
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
         .unwrap();
 
-    data[..end]
+    let res: Vec<_> = data[..end]
         .split(|&x| x == b',')
         .map(|current_node| {
             let current_node = current_node.trim_ascii();
@@ -200,7 +200,9 @@ pub fn get_nodes_path(data: &[u8], node_ids_by_name: &HashMap<Vec<u8>, RawNodeId
             let current_node = NodeId::new(current_node, orientation);
             current_node
         })
-        .collect()
+        .collect();
+    assert!(res.len() < u32::MAX as usize);
+    res
 }
 
 pub fn get_nodes_walk(data: &[u8], node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>) -> Vec<NodeId> {
