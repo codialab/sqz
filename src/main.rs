@@ -83,7 +83,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         let mut new_uv_set = None;
 
         // let should_print = non_terminal == NodeId::new(11, 0) || non_terminal == NodeId::new(8, 0) || non_terminal == NodeId::new(9, 0) || non_terminal == NodeId::new(10, 0); //(u.get_forward() == NodeId::new(9, 0) && v.get_forward() == NodeId::new(991, 0)) || (u.get_forward() == NodeId::new(987, 0) && v.get_forward() == NodeId::new(989, 0));
-        let should_print = false;
+        let should_print = true;
 
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
@@ -107,7 +107,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             let is_nu_flipped = is_edge_flipped(n, u);
             let is_nq_flipped = is_edge_flipped(n, non_terminal);
-            let (new_nu_set, mut nq_set) = uv_color_set.colors.xu_intersection(
+            let (mut new_nu_set, mut nq_set) = uv_color_set.colors.xu_intersection(
                 &nu_set.colors,
                 &mut mutation_outgoing,
                 is_nu_flipped,
@@ -140,7 +140,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                     println!("uv: {:?}, new_nq: {:?}", uv_color_set, nq_set);
                     println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
                 }
-                nq_set.cleanup_pre_self_loop(&uv_color_set.colors, is_nq_flipped);
+                let mut nu_set_addition = nq_set.cleanup_pre_self_loop(&uv_color_set.colors, is_nq_flipped);
                 if is_nq_flipped == is_edge_flipped(non_terminal, non_terminal) {
                     digrams.push(
                         canonize(non_terminal, non_terminal),
@@ -153,6 +153,10 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                         OrdColorSet::new(nq_set, true),
                     );
                 }
+                if is_nu_flipped != is_nq_flipped {
+                    nu_set_addition.flip_all();
+                }
+                new_nu_set.add_addition(nu_set_addition);
                 digrams.change_priority(&canonize(n, u), OrdColorSet::new(new_nu_set, false));
 
                 insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
@@ -178,7 +182,8 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
             println!("vn's n: {}", n);
 
             if n == u && u != v {
-                //continue;
+                // TODO: handle this case
+                continue;
             } else if n == v && u == v {
                 let (mut qq_set, mut qv_set, uv_temp) =
                     mem::take(&mut self_sets).expect("self sets should have been set");

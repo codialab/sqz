@@ -142,11 +142,13 @@ impl ColorSet {
         Self(HashMap::new())
     }
 
-    pub fn cleanup_pre_self_loop(&mut self, uv_set: &Self, _is_nq_flipped: bool) {
+    pub fn cleanup_pre_self_loop(&mut self, uv_set: &Self, _is_nq_flipped: bool) -> ColorSet {
+        let mut nu_set: HashMap<PathId, Vec<_>> = HashMap::new();
         // Filter out any that are not part of new self loop, at the same time directly apply mutation
         self.0.iter_mut().for_each(|(path, v)| {
+            nu_set.insert(*path, Vec::new());
             v.retain_mut(|entry| {
-                uv_set.0.contains_key(path)
+                let should_keep = uv_set.0.contains_key(path)
                     && uv_set.0[path].iter().any(|(uv_first, uv_second)| {
                         if entry.0 == *uv_second {
                             *entry = (*uv_first, entry.1);
@@ -158,9 +160,14 @@ impl ColorSet {
                         } else {
                             false
                         }
-                    })
+                    });
+                if !should_keep {
+                    nu_set.get_mut(path).expect("nu set pre self loop has path").push(*entry);
+                }
+                should_keep
             })
         });
+        ColorSet(nu_set)
     }
 
     pub fn xu_intersection(

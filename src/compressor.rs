@@ -89,12 +89,37 @@ pub fn encode_paths2(
             // break;
         }
     }
-    log::warn!(
-        "Incorrect first level: {}, incorrect all levels: {}, incorrect total usages: {}",
-        counter_first_level,
-        counter_all_levels,
-        counter_total
-    );
+    if counter_all_levels == 0 && counter_first_level == 0 && counter_total == 0 {
+        log::info!("Made no mistake in the rule application");
+    } else {
+        log::warn!(
+            "Incorrect first level: {}, incorrect all levels: {}, incorrect total usages: {}",
+            counter_first_level,
+            counter_all_levels,
+            counter_total
+        );
+    }
+    let mut used_digrams: HashMap<(NodeId, NodeId), usize> = HashMap::new();
+    for (_k, v) in result.iter() {
+        for (n1, n2) in v.iter().tuple_windows() {
+            let canonized = canonize(*n1, *n2);
+            used_digrams.entry(canonized).and_modify(|e| *e += 1).or_insert(1);
+        }
+    }
+    let mut fully_compacted = true;
+    for (k, v) in used_digrams {
+        if v >= 2 {
+            fully_compacted = false;
+            if let Some(rule) = rules_by_digram.get(&k) {
+                log::warn!("Used digram {:?} {} times (part of rule: {})", k, v, rule.left);
+            } else {
+                log::warn!("Used digram {:?} {} times (not part of any rule)", k, v);
+            }
+        }
+    }
+    if fully_compacted {
+        log::info!("Fully compacted {} paths", result.len());
+    }
     result
 }
 
@@ -172,14 +197,14 @@ pub fn encode_path2(
             } else {
                 prev_counter = curr_counter;
             }
-            if !stack.is_empty() {
-                curr_counter += 1;
-            }
-            // if nodes_visited_curr.contains(&curr.get_forward()) {
+            // if !stack.is_empty() {
             //     curr_counter += 1;
-            //     nodes_visited_curr.clear();
             // }
-            // nodes_visited_curr.insert(curr.get_forward());
+            if nodes_visited_curr.contains(&curr.get_forward()) {
+                curr_counter += 1;
+                nodes_visited_curr.clear();
+            }
+            nodes_visited_curr.insert(curr.get_forward());
 
             // Push to stack
             stack.push(curr);

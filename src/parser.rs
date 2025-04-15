@@ -140,17 +140,11 @@ pub fn parse_path_seq(
             let current_node = NodeId::new(current_node, orientation);
 
             prev_counter = curr_counter;
-            curr_counter += 1;
-            // if nodes_visited_curr.contains(&current_node.get_forward()) {
-            //     curr_counter += 1;
-            //     nodes_visited_curr.clear();
-            // }
-            // if nodes_visited_prev.contains(&prev_node.get_forward()) {
-            //     prev_counter += 1;
-            //     nodes_visited_prev.clear();
-            // }
+            if nodes_visited_curr.contains(&current_node.get_forward()) {
+                curr_counter += 1;
+                nodes_visited_curr.clear();
+            }
             nodes_visited_curr.insert(current_node.get_forward());
-            nodes_visited_prev.insert(prev_node.get_forward());
 
             print!("_({}|{})_{}", prev_counter, curr_counter, current_node);
 
