@@ -197,23 +197,22 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                     );
                     panic!("v-n should exist");
                 });
-                let qq_set = digrams.get_priority(&canonize(non_terminal, non_terminal)).unwrap_or_else(|| {
-                    log::error!(
-                        "qq: {} - {} | {:?} | offset: {}",
-                        non_terminal,
-                        non_terminal,
-                        canonize(non_terminal, non_terminal),
-                        offset
-                    );
-                    panic!("q-q should exist");
-                });
+                // let qq_set = digrams.get_priority(&canonize(non_terminal, non_terminal)).unwrap_or_else(|| {
+                //     log::error!(
+                //         "qq: {} - {} | {:?} | offset: {}",
+                //         non_terminal,
+                //         non_terminal,
+                //         canonize(non_terminal, non_terminal),
+                //         offset
+                //     );
+                //     panic!("q-q should exist");
+                // });
                 println!("++++++++++++++++++++++++++");
                 println!("Pre-self-loop case 2: {} -> {} {} (n: {})", non_terminal, u, v, n);
                 println!("vn: {:?}", vn_set);
-                println!("qq: {:?}", qq_set);
+                // println!("qq: {:?}", qq_set);
                 println!("uv: {:?}", uv_color_set);
                 println!("++++++++++++++++++++++++++");
-                continue;
             } else if n == v && u == v {
                 let (mut qq_set, mut qv_set, uv_temp) =
                     mem::take(&mut self_sets).expect("self sets should have been set");
