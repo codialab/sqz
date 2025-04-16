@@ -100,8 +100,17 @@ pub fn encode_paths2(
         );
     }
     let mut used_digrams: HashMap<(NodeId, NodeId), usize> = HashMap::new();
-    for (_k, v) in result.iter() {
-        for (n1, n2) in v.iter().tuple_windows() {
+    for (k, v) in result.iter() {
+        for (idx, (n1, n2)) in v.iter().tuple_windows().enumerate() {
+            if n1 == n2 {
+                let mut running_idx = 0;
+                while idx - running_idx > 0 && result[k][idx - running_idx] == *n1 {
+                    running_idx += 1;
+                }
+                if running_idx % 2 == 1 {
+                    continue;
+                }
+            }
             let canonized = canonize(*n1, *n2);
             used_digrams.entry(canonized).and_modify(|e| *e += 1).or_insert(1);
         }

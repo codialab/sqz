@@ -107,7 +107,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             let is_nu_flipped = is_edge_flipped(n, u);
             let is_nq_flipped = is_edge_flipped(n, non_terminal);
-            let (mut new_nu_set, mut nq_set) = uv_color_set.colors.xu_intersection(
+            let (new_nu_set, mut nq_set) = uv_color_set.colors.xu_intersection(
                 &nu_set.colors,
                 &mut mutation_outgoing,
                 is_nu_flipped,
@@ -140,7 +140,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                     println!("uv: {:?}, new_nq: {:?}", uv_color_set, nq_set);
                     println!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
                 }
-                let mut nu_set_addition = nq_set.cleanup_pre_self_loop(&uv_color_set.colors, is_nq_flipped);
+                let real_nq_set = nq_set.cleanup_pre_self_loop(&uv_color_set.colors, is_nq_flipped);
                 if is_nq_flipped == is_edge_flipped(non_terminal, non_terminal) {
                     digrams.push(
                         canonize(non_terminal, non_terminal),
@@ -153,10 +153,14 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                         OrdColorSet::new(nq_set, true),
                     );
                 }
-                if is_nu_flipped != is_nq_flipped {
-                    nu_set_addition.flip_all();
+                if !real_nq_set.is_empty() {
+                    digrams.push(
+                        canonize(n, non_terminal),
+                        OrdColorSet::new(real_nq_set, false),
+                    );
+                    insert_edge(&mut neighbors_to_insert, n, non_terminal);
                 }
-                new_nu_set.add_addition(nu_set_addition);
+                //new_nu_set.add_addition(nu_set_addition);
                 digrams.change_priority(&canonize(n, u), OrdColorSet::new(new_nu_set, false));
 
                 insert_edge(&mut neighbors_to_insert, non_terminal, non_terminal);
@@ -183,6 +187,32 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
             if n == u && u != v {
                 // TODO: handle this case
+                let vn_set = digrams.get_priority(&canonize(v, n)).unwrap_or_else(|| {
+                    log::error!(
+                        "vn: {} - {} | {:?} | offset: {}",
+                        v,
+                        n,
+                        canonize(v, n),
+                        offset
+                    );
+                    panic!("v-n should exist");
+                });
+                let qq_set = digrams.get_priority(&canonize(non_terminal, non_terminal)).unwrap_or_else(|| {
+                    log::error!(
+                        "qq: {} - {} | {:?} | offset: {}",
+                        non_terminal,
+                        non_terminal,
+                        canonize(non_terminal, non_terminal),
+                        offset
+                    );
+                    panic!("q-q should exist");
+                });
+                println!("++++++++++++++++++++++++++");
+                println!("Pre-self-loop case 2: {} -> {} {} (n: {})", non_terminal, u, v, n);
+                println!("vn: {:?}", vn_set);
+                println!("qq: {:?}", qq_set);
+                println!("uv: {:?}", uv_color_set);
+                println!("++++++++++++++++++++++++++");
                 continue;
             } else if n == v && u == v {
                 let (mut qq_set, mut qv_set, uv_temp) =
@@ -442,6 +472,9 @@ fn main() {
     let (mut neighbors, mut digrams, _path_id_to_path_segment) =
         parse_gfa_paths_walks(&args.file, &node_ids_by_name);
     let (rules, offset) = build_qlines(&mut neighbors, &mut digrams);
+    for (k, v) in digrams {
+        println!("digram: {:?}, {:?}", k, v.colors);
+    }
     let encoded_paths = encode_paths2(&args.file, &rules, offset, &node_ids_by_name);
     let mut rules = rules.into_iter().collect::<Vec<_>>();
     rules.sort_by_key(|r| r.0.get_idx());
