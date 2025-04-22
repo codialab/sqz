@@ -112,7 +112,10 @@ pub fn encode_paths2(
                 }
             }
             let canonized = canonize(*n1, *n2);
-            used_digrams.entry(canonized).and_modify(|e| *e += 1).or_insert(1);
+            used_digrams
+                .entry(canonized)
+                .and_modify(|e| *e += 1)
+                .or_insert(1);
         }
     }
     let mut fully_compacted = true;
@@ -120,7 +123,12 @@ pub fn encode_paths2(
         if v >= 2 {
             fully_compacted = false;
             if let Some(rule) = rules_by_digram.get(&k) {
-                log::warn!("Used digram {:?} {} times (part of rule: {})", k, v, rule.left);
+                log::warn!(
+                    "Used digram {:?} {} times (part of rule: {})",
+                    k,
+                    v,
+                    rule.left
+                );
             } else {
                 log::warn!("Used digram {:?} {} times (not part of any rule)", k, v);
             }
@@ -175,7 +183,12 @@ pub fn encode_path2(
 
                 if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::debug!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
+                    log::debug!(
+                        "\tWriting forward: {}, mult_stack: {:?}, stack: {:?}",
+                        old_mult.1,
+                        multiplicity_stack,
+                        stack
+                    );
                     change_prev = Some(old_mult.1);
                 } else {
                     log::debug!("Wanting to write forward, but cannot");
@@ -191,7 +204,11 @@ pub fn encode_path2(
                         .expect("Mult stack has at least 1 element") = (old_mult.0, mult.1);
                 } else if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::debug!("Writing backward over the end, er: {}, mult: {:?}, ", curr_counter, mult);
+                    log::debug!(
+                        "Writing backward over the end, er: {}, mult: {:?}, ",
+                        curr_counter,
+                        mult
+                    );
                     *multiplicity_stack
                         .last_mut()
                         .expect("Mult stack has at least 1 element") = (old_mult.0, curr_counter);
