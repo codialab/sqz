@@ -10,6 +10,7 @@ use compressor::encode_paths2;
 use indexmap::IndexMap;
 use node_id::{NodeId, RawNodeId};
 use parser::{canonize, parse_gfa_paths_walks, parse_node_ids};
+use path_segment::PathSegment;
 use priority_queue::PriorityQueue;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -41,11 +42,11 @@ impl fmt::Display for Rule {
     }
 }
 
-pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rules, NodeId) {
+pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rules, NodeId, HashMap<NodeId, Vec<NodeId>>) {
     log::info!("Building qlines for {} digrams", digrams.len());
     let offset = NodeId::from_raw(neighbors.len() as u64);
     let mut rules: Rules = IndexMap::new();
-    let mut parents: IndexMap<NodeId, Option<NodeId>> = IndexMap::new();
+    let mut parents: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
 
     let mut current_max_node_id = offset;
 
@@ -57,14 +58,14 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         if u >= offset {
             parents
                 .entry(u.get_forward())
-                .and_modify(|e| *e = None)
-                .or_insert(Some(non_terminal));
+                .and_modify(|e| e.push(non_terminal))
+                .or_insert(vec![non_terminal]);
         }
-        if v >= offset {
+        if v >= offset && u != v {
             parents
                 .entry(v.get_forward())
-                .and_modify(|e| *e = None)
-                .or_insert(Some(non_terminal));
+                .and_modify(|e| e.push(non_terminal))
+                .or_insert(vec![non_terminal]);
         }
 
         // Create space in neighbors list
@@ -83,11 +84,11 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         let mut new_uv_set = None;
 
         // let should_print = non_terminal == NodeId::new(11, 0) || non_terminal == NodeId::new(8, 0) || non_terminal == NodeId::new(9, 0) || non_terminal == NodeId::new(10, 0); //(u.get_forward() == NodeId::new(9, 0) && v.get_forward() == NodeId::new(991, 0)) || (u.get_forward() == NodeId::new(987, 0) && v.get_forward() == NodeId::new(989, 0));
-        let should_print = true;
+        let should_print = false;
 
         for n in neighbors.get(u.flip().get_idx()).unwrap() {
             let n = n.flip();
-            println!("nu's n: {}", n);
+            // println!("nu's n: {}", n);
 
             if n == u && u == v {
                 insert_edge(&mut neighbors_to_remove, n, u);
@@ -183,20 +184,20 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
 
         for n in &neighbors[v.get_idx()] {
             let n = *n;
-            println!("vn's n: {}", n);
+            // println!("vn's n: {}", n);
 
             if n == u && u != v {
                 // TODO: handle this case
-                let vn_set = digrams.get_priority(&canonize(v, n)).unwrap_or_else(|| {
-                    log::error!(
-                        "vn: {} - {} | {:?} | offset: {}",
-                        v,
-                        n,
-                        canonize(v, n),
-                        offset
-                    );
-                    panic!("v-n should exist");
-                });
+                // let vn_set = digrams.get_priority(&canonize(v, n)).unwrap_or_else(|| {
+                //     log::error!(
+                //         "vn: {} - {} | {:?} | offset: {}",
+                //         v,
+                //         n,
+                //         canonize(v, n),
+                //         offset
+                //     );
+                //     panic!("v-n should exist");
+                // });
                 // let qq_set = digrams.get_priority(&canonize(non_terminal, non_terminal)).unwrap_or_else(|| {
                 //     log::error!(
                 //         "qq: {} - {} | {:?} | offset: {}",
@@ -207,16 +208,16 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                 //     );
                 //     panic!("q-q should exist");
                 // });
-                println!("++++++++++++++++++++++++++");
-                println!("Pre-self-loop case 2: {} -> {} {} (n: {})", non_terminal, u, v, n);
-                println!("vn: {:?}", vn_set);
+                // println!("++++++++++++++++++++++++++");
+                // println!("Pre-self-loop case 2: {} -> {} {} (n: {})", non_terminal, u, v, n);
+                // println!("vn: {:?}", vn_set);
                 // println!("qq: {:?}", qq_set);
-                println!("uv: {:?}", uv_color_set);
-                println!("++++++++++++++++++++++++++");
+                // println!("uv: {:?}", uv_color_set);
+                // println!("++++++++++++++++++++++++++");
             } else if n == v && u == v {
                 let (mut qq_set, mut qv_set, uv_temp) =
                     mem::take(&mut self_sets).expect("self sets should have been set");
-                println!("qq_set: {:?}", qq_set);
+                // println!("qq_set: {:?}", qq_set);
                 new_uv_set = Some(uv_temp);
                 if !qq_set.is_empty() {
                     if is_edge_flipped(non_terminal, non_terminal) {
@@ -339,7 +340,7 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
                 },
             );
         } else {
-            println!("Self sets: {:?}", self_sets);
+            // println!("Self sets: {:?}", self_sets);
             rules.insert(
                 non_terminal,
                 Rule {
@@ -351,13 +352,8 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
         }
     }
     log::info!(
-        "Built {} rules, more than 0 parents: {}, exactly 1 parent: {}",
+        "Built {} rules",
         rules.len(),
-        parents.len(),
-        parents
-            .iter()
-            .map(|(_, x)| if x.is_some() { 1 } else { 0 })
-            .sum::<u64>()
     );
 
     let rules: Rules = rules
@@ -369,19 +365,19 @@ pub fn build_qlines(neighbors: &mut NeighborList, digrams: &mut Digrams) -> (Rul
     // let rules = merge_rules(rules, parents);
     // log::info!("After merging: {}", rules.len());
 
-    (rules, offset)
+    (rules, offset, parents)
 }
 
 fn is_edge_flipped(a: NodeId, b: NodeId) -> bool {
-    if a == NodeId::new(74, 0) && b == NodeId::new(26, 0) {
-        println!(
-            "FLIP?: {:?}, {:?}, {}, {}",
-            (a, b),
-            canonize(a, b),
-            canonize(a, b).0,
-            canonize(a, b).0 == b.flip()
-        )
-    }
+    // if a == NodeId::new(74, 0) && b == NodeId::new(26, 0) {
+        // println!(
+        //     "FLIP?: {:?}, {:?}, {}, {}",
+        //     (a, b),
+        //     canonize(a, b),
+        //     canonize(a, b).0,
+        //     canonize(a, b).0 == b.flip()
+        // )
+    // }
     canonize(a, b).0 == b.flip()
 }
 
@@ -394,13 +390,50 @@ fn reverse_rule(right: &Vec<NodeId>) -> Vec<NodeId> {
     right.iter().copied().rev().map(|x| x.flip()).collect()
 }
 
-fn merge_rules(mut rules: Rules, parents: IndexMap<NodeId, Option<NodeId>>) -> Rules {
+fn simplify_rules(mut rules: Rules, parents: &HashMap<NodeId, Vec<NodeId>>, encoded_paths: &mut HashMap<String, Vec<NodeId>>, path_id_to_path_segment: &HashMap<u64, PathSegment>) -> Rules {
+    log::info!("Merging rules in paths");
+    let rule_keys: Vec<NodeId> = rules.keys().copied().collect();
+    for rule in &rule_keys {
+        if !parents.contains_key(rule) && rules[rule].colors.colors.len() == 1 {
+            let path_id = rules[rule].colors.colors.get_first_path();
+            let path_name = format!("{}", path_id_to_path_segment[&path_id]);
+
+            // Insert
+            let mut idx = 0;
+            let mut reverse = false;
+            for (index, node) in encoded_paths[&path_name].iter().enumerate() {
+                if node.get_forward() == *rule {
+                    idx = index;
+                    reverse = node.get_orientation() == 1;
+                }
+            }
+            let rule_to_insert = if reverse {
+                reverse_rule(&rules[rule].right)
+            } else {
+                rules[rule].right.clone()
+            };
+            encoded_paths
+                .get_mut(&path_name)
+                .expect("Encoded paths contains path")
+                .splice(idx..idx + 1, rule_to_insert);
+
+            rules.remove(rule);
+        }
+    }
+    rules
+}
+
+fn merge_rules(mut rules: Rules, parents: &HashMap<NodeId, Vec<NodeId>>) -> Rules {
     log::info!("Merging rules");
-    let mut parents: IndexMap<NodeId, NodeId> = parents
+    let mut parents: HashMap<NodeId, NodeId> = parents.clone()
         .into_iter()
-        .filter_map(|(id, parent)| parent.map(|p| (id, p)))
+        .filter_map(|(id, parents)| match parents.len() {
+            1 => Some((id, *parents.first().expect("Parents contains at least one parent"))),
+            _ => None,
+        })
         .collect();
     let mut mergeables: Vec<NodeId> = parents.keys().copied().collect();
+    mergeables.sort_by_key(|v| v.get_idx());
     let mut counter = 0;
     let mut counter_diff_colors = 0;
 
@@ -408,10 +441,20 @@ fn merge_rules(mut rules: Rules, parents: IndexMap<NodeId, Option<NodeId>>) -> R
     while !mergeables.is_empty() {
         let q = mergeables.pop().expect("mergeables should contain a value");
         // log::debug!("Merging: {} (child of {:?}), with rule: {:?} (of rule: {:?})", q, parents.get(&q), rules.get(&q), rules.get(&parents[&q]));
+        if !parents.contains_key(&q) {
+            log::error!("Key not in parents: {}", q);
+        } else if !rules.contains_key(&parents[&q]) {
+            log::error!("Key not in rules: {} (parent of: {})", parents[&q], q);
+            continue;
+        }
+        if !rules.contains_key(&q) {
+            log::error!("Key not in rules: {}", q);
+            continue;
+        }
         if rules[&q]
             .colors
-            .colors
-            .equal_set(&rules[&parents[&q]].colors.colors)
+            .colors.len()
+            == rules[&parents[&q]].colors.colors.len()
         {
             counter += 1;
             let parent = parents[&q];
@@ -456,6 +499,50 @@ fn merge_rules(mut rules: Rules, parents: IndexMap<NodeId, Option<NodeId>>) -> R
     rules
 }
 
+fn check_rule_usability(offset: NodeId, encoded_paths: &HashMap<String, Vec<NodeId>>, rules: &IndexMap<NodeId, Rule>, parents: &HashMap<NodeId, Vec<NodeId>>) -> () {
+    let mut rule_usage_path: HashMap<NodeId, usize> = HashMap::new();
+    let mut rule_usage_rule: HashMap<NodeId, usize> = HashMap::new();
+    let mut everything_ok = true;
+    for (_path_name, path) in encoded_paths {
+        for node in path {
+            if *node >= offset {
+                rule_usage_path.entry(node.get_forward()).and_modify(|e| *e += 1).or_insert(1);
+                if !rules.contains_key(&node.get_forward()) {
+                    log::error!("Rule {} was mistakenly deleted (used in path)", node.get_forward());
+                    everything_ok = false;
+                }
+            }
+        }
+    }
+    for (_rule_name, rule) in rules {
+        for node in &rule.right {
+            if *node >= offset {
+                rule_usage_rule.entry(node.get_forward()).and_modify(|e| *e += 1).or_insert(1);
+                if !rules.contains_key(&node.get_forward()) {
+                    log::error!("Rule {} was mistakenly deleted (used in other rule)", node.get_forward());
+                    everything_ok = false;
+                }
+            }
+        }
+    }
+    let used_rules: HashSet<NodeId> = rule_usage_path.keys().chain(rule_usage_rule.keys()).copied().collect();
+    for rule in &used_rules {
+        if rule_usage_path.get(rule).copied().unwrap_or_default() + rule_usage_rule.get(rule).copied().unwrap_or_default() == 1 {
+            let path_appearance = rule_usage_path.get(rule).copied().unwrap_or_default() == 1;
+            if parents.contains_key(rule) {
+                log::warn!("Rule {} can be removed, but wasn't (path: {}, parents: {:?}, colors: {:?})", rule, path_appearance, parents[rule], rules[rule].colors);
+            } else {
+                log::warn!("Rule {} can be removed, but wasn't (path: {}, parents: zero, colors: {:?})", rule, path_appearance, rules[rule].colors);
+            }
+            everything_ok = false;
+        }
+    }
+
+    if everything_ok {
+        log::info!("Rule usability is optimal");
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -468,18 +555,22 @@ fn main() {
     env_logger::init();
     let args = Args::parse();
     let node_ids_by_name = parse_node_ids(&args.file);
-    let (mut neighbors, mut digrams, _path_id_to_path_segment) =
+    let (mut neighbors, mut digrams, path_id_to_path_segment) =
         parse_gfa_paths_walks(&args.file, &node_ids_by_name);
-    let (rules, offset) = build_qlines(&mut neighbors, &mut digrams);
-    for (k, v) in digrams {
-        println!("digram: {:?}, {:?}", k, v.colors);
-    }
-    let encoded_paths = encode_paths2(&args.file, &rules, offset, &node_ids_by_name);
+    let (rules, offset, parents) = build_qlines(&mut neighbors, &mut digrams);
+    // for (k, v) in digrams {
+    //     println!("digram: {:?}, {:?}", k, v.colors);
+    // }
+    let mut encoded_paths = encode_paths2(&args.file, &rules, offset, &node_ids_by_name);
+    let rules = merge_rules(rules, &parents);
+    let rules = simplify_rules(rules, &parents, &mut encoded_paths, &path_id_to_path_segment);
+    check_rule_usability(offset, &encoded_paths, &rules, &parents);
     let mut rules = rules.into_iter().collect::<Vec<_>>();
     rules.sort_by_key(|r| r.0.get_idx());
-    for (_, rule) in rules {
-        println!("Q\t{} | {:?}", rule, rule.colors);
+    for (_, rule) in &rules {
+        println!("Q\t{}", rule);
     }
+    log::info!("{} rules were written", rules.len());
     for (path_name, path) in encoded_paths {
         println!("Z\t{}\t{:?}", path_name, path);
     }

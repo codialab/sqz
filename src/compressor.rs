@@ -50,7 +50,7 @@ pub fn encode_paths2(
                 _ => unreachable!(),
             };
 
-            print_multiplicities(&nodes);
+            // print_multiplicities(&nodes);
             let encoded_path =
                 encode_path2(nodes, &rules_by_digram, &mut statistics, path_id, offset);
             result.insert(path_seg.to_string(), encoded_path);

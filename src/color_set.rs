@@ -142,6 +142,10 @@ impl ColorSet {
         Self(HashMap::new())
     }
 
+    pub fn get_first_path(&self) -> PathId {
+        *self.0.keys().next().expect("Color set contains at least one entry")
+    }
+
     pub fn cleanup_pre_self_loop(&mut self, uv_set: &Self, _is_nq_flipped: bool) -> ColorSet {
         let mut nu_set: HashMap<PathId, Vec<_>> = HashMap::new();
         // Filter out any that are not part of new self loop, at the same time directly apply mutation

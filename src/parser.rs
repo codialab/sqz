@@ -92,9 +92,9 @@ pub fn parse_gfa_paths_walks(
     let digrams: Vec<((NodeId, NodeId), OrdColorSet)> = digrams.into_iter().collect();
     let digrams: PriorityQueue<_, _> = PriorityQueue::from(digrams);
     let mut copy = digrams.clone();
-    while let Some((i, j)) = copy.pop() {
-        println!("{:?}: {:?}", i, j.len());
-    }
+    // while let Some((i, j)) = copy.pop() {
+    //     println!("{:?}: {:?}", i, j.len());
+    // }
     (neighbors, digrams, path_id_to_path_segment)
 }
 
@@ -127,8 +127,8 @@ pub fn parse_path_seq(
     let mut prev_node = NodeId::new(prev_node, orientation);
 
     nodes_visited_curr.insert(prev_node.get_forward());
-    println!("Inserting {} into {:?}", prev_node, nodes_visited_curr);
-    print!("{}", prev_node);
+    // println!("Inserting {} into {:?}", prev_node, nodes_visited_curr);
+    // print!("{}", prev_node);
     data[..end]
         .split(|&x| x == b',')
         .skip(1)
@@ -146,7 +146,7 @@ pub fn parse_path_seq(
             }
             nodes_visited_curr.insert(current_node.get_forward());
 
-            print!("_({}|{})_{}", prev_counter, curr_counter, current_node);
+            // print!("_({}|{})_{}", prev_counter, curr_counter, current_node);
 
             let (first_node, second_node) = (prev_node, current_node);
             let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
@@ -172,7 +172,7 @@ pub fn parse_path_seq(
 
             prev_node = current_node;
         });
-    println!("");
+    // println!("");
 
     log::debug!("parsing path sequences of size {} bytes..", end);
 }
