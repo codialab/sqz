@@ -92,9 +92,9 @@ pub fn parse_gfa_paths_walks(
     let digrams: Vec<((NodeId, NodeId), OrdColorSet)> = digrams.into_iter().collect();
     let digrams: PriorityQueue<_, _> = PriorityQueue::from(digrams);
     let mut copy = digrams.clone();
-    while let Some((i, j)) = copy.pop() {
-        println!("{:?}: {:?}", i, j.len());
-    }
+    // while let Some((i, j)) = copy.pop() {
+    //     println!("{:?}: {:?}", i, j.len());
+    // }
     (neighbors, digrams, path_id_to_path_segment)
 }
 
@@ -126,10 +126,9 @@ pub fn parse_path_seq(
     // Set the counter before setting the orientation to not take the orientation into account
     let mut prev_node = NodeId::new(prev_node, orientation);
 
-
     nodes_visited_curr.insert(prev_node.get_forward());
-    println!("Inserting {} into {:?}", prev_node, nodes_visited_curr);
-    print!("{}", prev_node);
+    // println!("Inserting {} into {:?}", prev_node, nodes_visited_curr);
+    // print!("{}", prev_node);
     data[..end]
         .split(|&x| x == b',')
         .skip(1)
@@ -140,18 +139,14 @@ pub fn parse_path_seq(
 
             let current_node = NodeId::new(current_node, orientation);
 
+            prev_counter = curr_counter;
             if nodes_visited_curr.contains(&current_node.get_forward()) {
                 curr_counter += 1;
                 nodes_visited_curr.clear();
             }
-            if nodes_visited_prev.contains(&prev_node.get_forward()) {
-                prev_counter += 1;
-                nodes_visited_prev.clear();
-            }
             nodes_visited_curr.insert(current_node.get_forward());
-            nodes_visited_prev.insert(prev_node.get_forward());
 
-            print!("_({}|{})_{}", prev_counter, curr_counter, current_node);
+            // print!("_({}|{})_{}", prev_counter, curr_counter, current_node);
 
             let (first_node, second_node) = (prev_node, current_node);
             let (flipped_first_node, flipped_second_node) = flip_digram(first_node, second_node);
@@ -177,7 +172,7 @@ pub fn parse_path_seq(
 
             prev_node = current_node;
         });
-    println!("");
+    // println!("");
 
     log::debug!("parsing path sequences of size {} bytes..", end);
 }
@@ -189,7 +184,7 @@ pub fn get_nodes_path(data: &[u8], node_ids_by_name: &HashMap<Vec<u8>, RawNodeId
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
         .unwrap();
 
-    data[..end]
+    let res: Vec<_> = data[..end]
         .split(|&x| x == b',')
         .map(|current_node| {
             let current_node = current_node.trim_ascii();
@@ -199,7 +194,9 @@ pub fn get_nodes_path(data: &[u8], node_ids_by_name: &HashMap<Vec<u8>, RawNodeId
             let current_node = NodeId::new(current_node, orientation);
             current_node
         })
-        .collect()
+        .collect();
+    assert!(res.len() < u32::MAX as usize);
+    res
 }
 
 pub fn get_nodes_walk(data: &[u8], node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>) -> Vec<NodeId> {

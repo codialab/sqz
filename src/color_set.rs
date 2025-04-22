@@ -142,11 +142,36 @@ impl ColorSet {
         Self(HashMap::new())
     }
 
-    pub fn cleanup_pre_self_loop(&mut self, uv_set: &Self) {
+    pub fn get_first_path(&self) -> PathId {
+        *self.0.keys().next().expect("Color set contains at least one entry")
+    }
+
+    pub fn cleanup_pre_self_loop(&mut self, uv_set: &Self, _is_nq_flipped: bool) -> ColorSet {
+        let mut nu_set: HashMap<PathId, Vec<_>> = HashMap::new();
         // Filter out any that are not part of new self loop, at the same time directly apply mutation
-        self.0
-            .iter_mut()
-            .for_each(|(path, v)| v.retain_mut(|entry| uv_set.0.contains_key(path) && uv_set.0[path].iter().any(|(uv_first, uv_second)| { if entry.0 == *uv_second { *entry = (*uv_first, entry.1); true } else { false } })));
+        self.0.iter_mut().for_each(|(path, v)| {
+            nu_set.insert(*path, Vec::new());
+            v.retain_mut(|entry| {
+                let should_keep = uv_set.0.contains_key(path)
+                    && uv_set.0[path].iter().any(|(uv_first, uv_second)| {
+                        if entry.0 == *uv_second {
+                            *entry = (*uv_first, entry.1);
+                            true
+                        // TODO: Is this necessary? is_nq_flipped
+                        // } else if entry.1 == *uv_second {
+                        //     *entry = (entry.0, *uv_first);
+                        //     true
+                        } else {
+                            false
+                        }
+                    });
+                if !should_keep {
+                    nu_set.get_mut(path).expect("nu set pre self loop has path").push(*entry);
+                }
+                should_keep
+            })
+        });
+        ColorSet(nu_set)
     }
 
     pub fn xu_intersection(
@@ -255,14 +280,25 @@ impl ColorSet {
         let mut new_vn_set = ColorSet::new();
         for path in self.0.keys() {
             for multiplicity in &self.0[path] {
-                if let Some(replacement) = mutate_outgoing.get(&(*path, if !is_qn_flipped { multiplicity.0 } else { multiplicity.1 })) {
+                if let Some(replacement) = mutate_outgoing.get(&(
+                    *path,
+                    if !is_qn_flipped {
+                        multiplicity.0
+                    } else {
+                        multiplicity.1
+                    },
+                )) {
                     if !is_qn_flipped {
                         new_qn_set.insert(*path, (*replacement, multiplicity.1));
                     } else {
                         new_qn_set.insert(*path, (multiplicity.0, *replacement));
                     }
                 } else {
-                    new_vn_set.insert(*path, *multiplicity);
+                    if is_qn_flipped == is_vn_flipped {
+                        new_vn_set.insert(*path, *multiplicity);
+                    } else {
+                        new_vn_set.insert(*path, transpose(*multiplicity));
+                    }
                 }
             }
         }
@@ -279,7 +315,10 @@ impl ColorSet {
             .map(|(path, v)| {
                 let mut multiplicities = v.to_owned();
                 if multiplicities.is_empty() {
-                    return ((*path, Vec::new()), ((*path, Vec::new()), (*path, Vec::new())))
+                    return (
+                        (*path, Vec::new()),
+                        ((*path, Vec::new()), (*path, Vec::new())),
+                    );
                 }
                 multiplicities.sort();
                 let mut sections = Vec::new();
@@ -367,15 +406,18 @@ mod tests {
 
     #[test]
     fn test_flip_all() {
-        let mut c = ColorSet(HashMap::from([(
-            0,
-            vec![(9, 8), (1, 3)],
-        ), (1, vec![(0, 4), (7, 12)])]));
+        let mut c = ColorSet(HashMap::from([
+            (0, vec![(9, 8), (1, 3)]),
+            (1, vec![(0, 4), (7, 12)]),
+        ]));
         c.flip_all();
-        assert_eq!(c, ColorSet(HashMap::from([(
-            0,
-            vec![(8, 9), (3, 1)],
-        ), (1, vec![(4, 0), (12, 7)])])));
+        assert_eq!(
+            c,
+            ColorSet(HashMap::from([
+                (0, vec![(8, 9), (3, 1)],),
+                (1, vec![(4, 0), (12, 7)])
+            ]))
+        );
     }
 
     #[test]
