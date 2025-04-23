@@ -255,29 +255,3 @@ fn is_rule_applicable(
         false
     }
 }
-
-fn print_multiplicities(nodes: &Vec<NodeId>) {
-    let mut nodes_visited_prev: HashSet<NodeId> = HashSet::new();
-    let mut prev_counter = 0;
-    let mut nodes_visited_curr: HashSet<NodeId> = HashSet::new();
-    let mut curr_counter = 0;
-
-    nodes_visited_curr.insert(nodes[0].get_forward());
-    nodes.iter().tuple_windows().for_each(|(prev, curr)| {
-        prev_counter = curr_counter;
-        curr_counter += 1;
-        // if nodes_visited_prev.contains(&prev.get_forward()) {
-        //     prev_counter += 1;
-        //     nodes_visited_prev.clear();
-        // }
-        // nodes_visited_prev.insert(prev.get_forward());
-        // if nodes_visited_curr.contains(&curr.get_forward()) {
-        //     // log::error!("= Resetting outside curr =");
-        //     curr_counter += 1;
-        //     nodes_visited_curr.clear();
-        // }
-        nodes_visited_curr.insert(curr.get_forward());
-        print!("{}-({}|{})-", prev, prev_counter, curr_counter);
-    });
-    println!("{}", nodes.last().unwrap());
-}

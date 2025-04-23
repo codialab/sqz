@@ -7,7 +7,6 @@ mod path_segment;
 use clap::Parser;
 use color_set::OrdColorSet;
 use compressor::encode_paths2;
-use indexmap::IndexMap;
 use node_id::{NodeId, RawNodeId};
 use parser::{bufreader_from_compressed_gfa, canonize, parse_gfa_paths_walks, parse_node_ids};
 use path_segment::PathSegment;
@@ -21,7 +20,7 @@ const MAX_OCCURENCES: usize = 2;
 
 type NeighborList = Vec<HashSet<NodeId>>;
 type Digrams = PriorityQueue<(NodeId, NodeId), OrdColorSet>;
-type Rules = IndexMap<NodeId, Rule>;
+type Rules = HashMap<NodeId, Rule>;
 
 #[derive(Clone)]
 pub struct Rule {
@@ -49,7 +48,7 @@ pub fn build_qlines(
 ) -> (Rules, NodeId, HashMap<NodeId, Vec<NodeId>>) {
     log::info!("Building qlines for {} digrams", digrams.len());
     let offset = NodeId::from_raw(neighbors.len() as u64);
-    let mut rules: Rules = IndexMap::new();
+    let mut rules: Rules = HashMap::new();
     let mut parents: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
 
     let mut current_max_node_id = offset;
@@ -495,7 +494,7 @@ fn simplify_rules(
 fn check_rule_usability(
     offset: NodeId,
     encoded_paths: &HashMap<PathSegment, Vec<NodeId>>,
-    rules: &IndexMap<NodeId, Rule>,
+    rules: &Rules,
     parents: &HashMap<NodeId, Vec<NodeId>>,
 ) -> () {
     let mut rule_usage_path: HashMap<NodeId, usize> = HashMap::new();
@@ -622,12 +621,11 @@ fn main() {
     let node_ids_by_name = parse_node_ids(&args.file);
     let (mut neighbors, mut digrams, path_id_to_path_segment) =
         parse_gfa_paths_walks(&args.file, &node_ids_by_name);
-    let (rules, offset, mut parents) = build_qlines(&mut neighbors, &mut digrams);
+    let (rules, offset, parents) = build_qlines(&mut neighbors, &mut digrams);
     let mut encoded_paths = encode_paths2(&args.file, &rules, offset, &node_ids_by_name);
     let mut prules = rules.iter().collect::<Vec<_>>();
     prules.sort_by_key(|r| r.0.get_idx());
     let mut safe_parents = parents.clone();
-    let mut safe_encoded_paths = encoded_paths.clone();
     let rules = simplify_rules(
         rules,
         &mut safe_parents,
