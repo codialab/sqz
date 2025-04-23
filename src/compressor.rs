@@ -8,6 +8,7 @@ use crate::{
         bufreader_from_compressed_gfa, get_nodes_path, get_nodes_walk, parse_path_identifier,
         parse_walk_identifier,
     },
+    path_segment::PathSegment,
     Rule, Rules,
 };
 use itertools::Itertools;
@@ -19,8 +20,8 @@ pub fn encode_paths2(
     rules: &Rules,
     offset: NodeId,
     node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
-) -> HashMap<String, Vec<NodeId>> {
-    let mut result: HashMap<String, Vec<NodeId>> = HashMap::new();
+) -> HashMap<PathSegment, Vec<NodeId>> {
+    let mut result: HashMap<PathSegment, Vec<NodeId>> = HashMap::new();
     let mut rules_by_digram: HashMap<(NodeId, NodeId), &Rule> = HashMap::new();
     for (_idx, rule) in rules.iter() {
         rules_by_digram
@@ -53,7 +54,7 @@ pub fn encode_paths2(
             // print_multiplicities(&nodes);
             let encoded_path =
                 encode_path2(nodes, &rules_by_digram, &mut statistics, path_id, offset);
-            result.insert(path_seg.to_string(), encoded_path);
+            result.insert(path_seg, encoded_path);
 
             path_id += 1;
         }
@@ -112,7 +113,10 @@ pub fn encode_paths2(
                 }
             }
             let canonized = canonize(*n1, *n2);
-            used_digrams.entry(canonized).and_modify(|e| *e += 1).or_insert(1);
+            used_digrams
+                .entry(canonized)
+                .and_modify(|e| *e += 1)
+                .or_insert(1);
         }
     }
     let mut fully_compacted = true;
@@ -120,7 +124,12 @@ pub fn encode_paths2(
         if v >= 2 {
             fully_compacted = false;
             if let Some(rule) = rules_by_digram.get(&k) {
-                log::warn!("Used digram {:?} {} times (part of rule: {})", k, v, rule.left);
+                log::warn!(
+                    "Used digram {:?} {} times (part of rule: {})",
+                    k,
+                    v,
+                    rule.left
+                );
             } else {
                 log::warn!("Used digram {:?} {} times (not part of any rule)", k, v);
             }
@@ -175,23 +184,19 @@ pub fn encode_path2(
 
                 if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::debug!("\tWriting forward: {}, mult_stack: {:?}, stack: {:?}", old_mult.1, multiplicity_stack, stack);
                     change_prev = Some(old_mult.1);
                 } else {
-                    log::debug!("Wanting to write forward, but cannot");
                 }
             } else {
                 stack.push(left.flip());
 
                 if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::debug!("\tWriting backward: {:?}", (old_mult.0, mult.1));
                     *multiplicity_stack
                         .last_mut()
                         .expect("Mult stack has at least 1 element") = (old_mult.0, mult.1);
                 } else if !multiplicity_stack.is_empty() {
                     let old_mult = multiplicity_stack[multiplicity_stack.len() - 1];
-                    log::debug!("Writing backward over the end, er: {}, mult: {:?}, ", curr_counter, mult);
                     *multiplicity_stack
                         .last_mut()
                         .expect("Mult stack has at least 1 element") = (old_mult.0, curr_counter);
@@ -240,27 +245,7 @@ fn is_rule_applicable(
     } else {
         multiplicity
     };
-    log::debug!(
-        "Looking at {:?}, multiplicity {:?} (canon: {:?})",
-        digram,
-        multiplicity,
-        canonized_multiplicity
-    );
     if let Some(rule) = rules_by_digram.get(&canonized) {
-        log::debug!(
-            "\tMatching rule: {} -> {:?}, colors: {:?}",
-            rule.left,
-            rule.right,
-            rule.colors
-        );
-        log::debug!(
-            "\tMatched: {}",
-            rule.colors.colors.contains(
-                path_id,
-                canonized_multiplicity.0 as u32,
-                canonized_multiplicity.1 as u32
-            )
-        );
         rule.colors.colors.contains(
             path_id,
             canonized_multiplicity.0 as u32,

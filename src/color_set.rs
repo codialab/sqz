@@ -143,7 +143,19 @@ impl ColorSet {
     }
 
     pub fn get_first_path(&self) -> PathId {
-        *self.0.keys().next().expect("Color set contains at least one entry")
+        *self
+            .0
+            .keys()
+            .next()
+            .expect("Color set contains at least one entry")
+    }
+
+    pub fn get_path_ids(&self) -> Vec<PathId> {
+        self.0.keys().copied().collect()
+    }
+
+    pub fn get_path_counts(&self) -> HashMap<PathId, usize> {
+        self.0.iter().map(|(k, v)| (*k, v.len())).collect()
     }
 
     pub fn cleanup_pre_self_loop(&mut self, uv_set: &Self, _is_nq_flipped: bool) -> ColorSet {
@@ -166,7 +178,10 @@ impl ColorSet {
                         }
                     });
                 if !should_keep {
-                    nu_set.get_mut(path).expect("nu set pre self loop has path").push(*entry);
+                    nu_set
+                        .get_mut(path)
+                        .expect("nu set pre self loop has path")
+                        .push(*entry);
                 }
                 should_keep
             })

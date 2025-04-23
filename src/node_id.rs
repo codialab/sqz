@@ -34,6 +34,10 @@ impl NodeId {
         Self(self.0 & (!1u64))
     }
 
+    pub fn get_index_string(&self) -> String {
+        format!("{}", (self.0 >> 1) + 1)
+    }
+
     pub fn is_forward(&self) -> bool {
         self.0 & 1 == 0
     }
