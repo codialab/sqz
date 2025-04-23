@@ -133,6 +133,26 @@ pub fn get_nodes_walk(data: &[u8], node_ids_by_name: &HashMap<Vec<u8>, RawNodeId
         .collect()
 }
 
+pub fn get_nodes_walk_like(data: &[u8]) -> Vec<NodeId> {
+    let mut it = data.iter();
+    let end = it
+        .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
+        .unwrap();
+    RE_WALK
+        .captures_iter(&data[..end])
+        .map(|current_node| {
+            let orientation = (current_node[1][0] != b'>') as u64;
+            let current_node = str::parse::<u64>(
+                std::str::from_utf8(&current_node[2]).expect("Q-line content contains valid utf-8"),
+            )
+            .expect("Walk contains valid nodes");
+
+            let current_node = NodeId::new(current_node, orientation);
+            current_node
+        })
+        .collect()
+}
+
 pub fn parse_path_seq(
     data: &[u8],
     path_id: u64,
@@ -344,4 +364,41 @@ pub fn parse_node_ids(gfa_file: &str) -> HashMap<Vec<u8>, RawNodeId> {
 
     log::info!("found: {} nodes", node2id.len());
     node2id
+}
+
+pub fn parse_compressed_lines(
+    gfa_file: &str,
+) -> (
+    HashMap<NodeId, Vec<NodeId>>,
+    HashMap<PathSegment, Vec<NodeId>>,
+) {
+    let mut data = bufreader_from_compressed_gfa(gfa_file);
+    let mut buf = vec![];
+    let mut path_id = 0;
+    let mut rules: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+    let mut paths: HashMap<PathSegment, Vec<NodeId>> = HashMap::new();
+    while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+        if buf[0] == b'Q' {
+            let mut iter = buf[2..].iter();
+            iter.next();
+            let offset = iter.position(|&x| x == b'\t').unwrap();
+            println!(
+                "Q: |{}|",
+                std::str::from_utf8(&buf[2..3 + offset]).expect("Buffer contains valid utf-8")
+            );
+            let node_text = str::parse::<u64>(
+                std::str::from_utf8(&buf[2..3 + offset]).expect("Buffer contains valid utf-8"),
+            )
+            .expect("Q-line contains valid node id");
+            let lhs = NodeId::new(node_text, 0);
+            let rhs = get_nodes_walk_like(&buf[4 + offset..]);
+            rules.insert(lhs, rhs);
+        } else if buf[0] == b'Z' {
+            let (path_seg, buf_path_seg) = parse_walk_identifier(&buf);
+            let nodes = get_nodes_walk_like(buf_path_seg);
+            paths.insert(path_seg, nodes);
+        }
+        buf.clear();
+    }
+    (rules, paths)
 }

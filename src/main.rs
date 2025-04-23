@@ -4,11 +4,14 @@ mod node_id;
 mod parser;
 mod path_segment;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use color_set::OrdColorSet;
 use compressor::encode_paths2;
 use node_id::{NodeId, RawNodeId};
-use parser::{bufreader_from_compressed_gfa, canonize, parse_gfa_paths_walks, parse_node_ids};
+use parser::{
+    bufreader_from_compressed_gfa, canonize, parse_compressed_lines, parse_gfa_paths_walks,
+    parse_node_ids,
+};
 use path_segment::PathSegment;
 use priority_queue::PriorityQueue;
 use std::collections::{HashMap, HashSet};
@@ -570,14 +573,6 @@ fn check_rule_usability(
     }
 }
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// Name of the person to greet
-    #[arg(short, long)]
-    file: String,
-}
-
 fn write_file(gfa_file: &str, rules: &Rules, encoded_paths: &HashMap<PathSegment, Vec<NodeId>>) {
     log::info!("Writing output");
     let mut buf = vec![];
@@ -597,12 +592,12 @@ fn write_file(gfa_file: &str, rules: &Rules, encoded_paths: &HashMap<PathSegment
     }
 
     // Print all Q-lines
-    for (_name, rule) in rules {
+    for rule in rules.values() {
         print!("Q\t{}\t", rule.left.get_index_string());
         for node in &rule.right {
             print!("{}", node);
         }
-        println!("");
+        println!();
     }
 
     // Print all Z-lines
@@ -611,29 +606,71 @@ fn write_file(gfa_file: &str, rules: &Rules, encoded_paths: &HashMap<PathSegment
         for node in path {
             print!("{}", node);
         }
-        println!("");
+        println!();
     }
+}
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Compresses a GFA file
+    #[command(arg_required_else_help = true)]
+    Compress {
+        /// Input GFA file
+        #[arg(required = true)]
+        file: String,
+
+        /// Minimum number a sequence has to appear to have its own rule
+        #[arg(short, default_value_t = 2)]
+        k: usize,
+    },
+
+    /// Decompresses a GFA file
+    #[command(arg_required_else_help = true)]
+    Decompress {
+        /// Input GFA file
+        #[arg(required = true)]
+        file: String,
+    },
 }
 
 fn main() {
     env_logger::init();
-    let args = Args::parse();
-    let node_ids_by_name = parse_node_ids(&args.file);
-    let (mut neighbors, mut digrams, path_id_to_path_segment) =
-        parse_gfa_paths_walks(&args.file, &node_ids_by_name);
-    let (rules, offset, parents) = build_qlines(&mut neighbors, &mut digrams);
-    let mut encoded_paths = encode_paths2(&args.file, &rules, offset, &node_ids_by_name);
-    let mut prules = rules.iter().collect::<Vec<_>>();
-    prules.sort_by_key(|r| r.0.get_idx());
-    let mut safe_parents = parents.clone();
-    let rules = simplify_rules(
-        rules,
-        &mut safe_parents,
-        &mut encoded_paths,
-        &path_id_to_path_segment,
-        2usize,
-    );
-    check_rule_usability(offset, &encoded_paths, &rules, &parents);
-    write_file(&args.file, &rules, &encoded_paths);
-    log::info!("{} rules were written", rules.len());
+    let args = Cli::parse();
+
+    match args.command {
+        Commands::Compress { file, k } => {
+            log::info!("Compressing file {} with k = {}", file, k);
+            let node_ids_by_name = parse_node_ids(&file);
+            let (mut neighbors, mut digrams, path_id_to_path_segment) =
+                parse_gfa_paths_walks(&file, &node_ids_by_name);
+            let (rules, offset, parents) = build_qlines(&mut neighbors, &mut digrams);
+            let mut encoded_paths = encode_paths2(&file, &rules, offset, &node_ids_by_name);
+            let mut prules = rules.iter().collect::<Vec<_>>();
+            prules.sort_by_key(|r| r.0.get_idx());
+            let mut safe_parents = parents.clone();
+            let rules = simplify_rules(
+                rules,
+                &mut safe_parents,
+                &mut encoded_paths,
+                &path_id_to_path_segment,
+                k,
+            );
+            check_rule_usability(offset, &encoded_paths, &rules, &parents);
+            write_file(&file, &rules, &encoded_paths);
+            log::info!("{} rules were written", rules.len());
+        }
+        Commands::Decompress { file } => {
+            log::info!("Decompressing file {}", file);
+            let (rules, paths) = parse_compressed_lines(&file);
+            println!("rules: {:?}", rules);
+            println!("paths: {:?}", paths);
+        }
+    }
 }
