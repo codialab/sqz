@@ -9,13 +9,13 @@ use color_set::OrdColorSet;
 use compressor::encode_paths2;
 use indexmap::IndexMap;
 use node_id::{NodeId, RawNodeId};
-use parser::{canonize, parse_gfa_paths_walks, parse_node_ids, bufreader_from_compressed_gfa};
+use parser::{bufreader_from_compressed_gfa, canonize, parse_gfa_paths_walks, parse_node_ids};
 use path_segment::PathSegment;
 use priority_queue::PriorityQueue;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::mem;
 use std::io::BufRead;
+use std::mem;
 
 const MAX_OCCURENCES: usize = 2;
 
@@ -308,7 +308,6 @@ pub fn build_qlines(
                 .or_insert(vec![non_terminal]);
         }
 
-
         if new_uv_set.is_none() {
             rules.insert(
                 non_terminal,
@@ -352,14 +351,34 @@ fn reverse_rule(right: &Vec<NodeId>) -> Vec<NodeId> {
     right.iter().copied().rev().map(|x| x.flip()).collect()
 }
 
-fn is_mergeable(rule: NodeId, rules: &Rules, parents: &HashMap<NodeId, Vec<NodeId>>, threshold: usize) -> bool {
+fn is_mergeable(
+    rule: NodeId,
+    rules: &Rules,
+    parents: &HashMap<NodeId, Vec<NodeId>>,
+    threshold: usize,
+) -> bool {
     let rule_uses = parents.get(&rule).map(|p| p.len()).unwrap_or_default();
     let all_uses = rules[&rule].colors.colors.len();
-    let path_uses = all_uses - parents.get(&rule).map(|rule_parents| rule_parents.iter().map(|parent| {
-        if !rules.contains_key(parent) {
-            log::error!("Missing rules for parent: {} (parent of {}, content: {:?})", parent, rule, rules[&rule].right);
-        }
-        rules[parent].colors.colors.len() }).sum::<usize>()).unwrap_or_default();
+    let path_uses = all_uses
+        - parents
+            .get(&rule)
+            .map(|rule_parents| {
+                rule_parents
+                    .iter()
+                    .map(|parent| {
+                        if !rules.contains_key(parent) {
+                            log::error!(
+                                "Missing rules for parent: {} (parent of {}, content: {:?})",
+                                parent,
+                                rule,
+                                rules[&rule].right
+                            );
+                        }
+                        rules[parent].colors.colors.len()
+                    })
+                    .sum::<usize>()
+            })
+            .unwrap_or_default();
     rule_uses + path_uses < threshold
 }
 
@@ -386,19 +405,28 @@ fn replace_rule(text: &mut Vec<NodeId>, rule: NodeId, replacement: Vec<NodeId>) 
     text.splice(idx..idx + 1, rule_to_insert);
 }
 
-fn get_correct_path_ids(parents: &HashMap<NodeId, Vec<NodeId>>, rules: &Rules, rule: NodeId) -> Vec<u64> {
+fn get_correct_path_ids(
+    parents: &HashMap<NodeId, Vec<NodeId>>,
+    rules: &Rules,
+    rule: NodeId,
+) -> Vec<u64> {
     let mut all_path_ids = rules[&rule].colors.colors.get_path_counts();
     for parent in parents.get(&rule).unwrap_or(&Vec::new()).iter() {
         let parent_path_ids = rules[parent].colors.colors.get_path_counts();
         for (path_id, count) in parent_path_ids {
             if all_path_ids[&path_id] >= count {
-                *all_path_ids.get_mut(&path_id).expect("Child contains all paths of parent") -= count;
+                *all_path_ids
+                    .get_mut(&path_id)
+                    .expect("Child contains all paths of parent") -= count;
             } else {
                 log::error!("Getting a negative amount of paths");
             }
         }
     }
-    all_path_ids.into_iter().filter_map(|(path_id, count)| if count > 0 { Some(path_id) } else { None }).collect::<Vec<u64>>()
+    all_path_ids
+        .into_iter()
+        .filter_map(|(path_id, count)| if count > 0 { Some(path_id) } else { None })
+        .collect::<Vec<u64>>()
 }
 
 fn simplify_rules(
@@ -414,24 +442,44 @@ fn simplify_rules(
     let mut counter = 0;
 
     while !potentially_mergeables.is_empty() {
-        let rule = potentially_mergeables.pop().expect("potentially_mergeables has at least one item");
-        if !is_mergeable(rule, &rules, &parents, threshold) { continue; }
+        let rule = potentially_mergeables
+            .pop()
+            .expect("potentially_mergeables has at least one item");
+        if !is_mergeable(rule, &rules, &parents, threshold) {
+            continue;
+        }
         log::debug!("Simplifying rule: {}", rule);
         for parent in parents.get(&rule).unwrap_or(&Vec::new()).iter() {
             let replacement = rules[&rule].right.clone();
-            replace_rule(&mut rules.get_mut(parent).expect("Rules contain parent").right, rule, replacement);
+            replace_rule(
+                &mut rules.get_mut(parent).expect("Rules contain parent").right,
+                rule,
+                replacement,
+            );
         }
         for path_id in get_correct_path_ids(&parents, &rules, rule) {
             let path_name = &path_id_to_path_segment[&path_id];
             let replacement = rules[&rule].right.clone();
-            replace_rule(encoded_paths.get_mut(&path_name).expect("Encoded paths contains path"), rule, replacement);
+            replace_rule(
+                encoded_paths
+                    .get_mut(&path_name)
+                    .expect("Encoded paths contains path"),
+                rule,
+                replacement,
+            );
         }
         for child in rules[&rule].right.iter() {
             let child = child.get_forward();
             if rules.contains_key(&child) {
-                parents.get_mut(&child).expect("Parents of child contain node").retain(|el| *el != rule);
+                parents
+                    .get_mut(&child)
+                    .expect("Parents of child contain node")
+                    .retain(|el| *el != rule);
                 let rule_parents = parents.get(&rule).cloned().unwrap_or_default();
-                parents.get_mut(&child).expect("Parents of child contain node").extend(rule_parents);
+                parents
+                    .get_mut(&child)
+                    .expect("Parents of child contain node")
+                    .extend(rule_parents);
                 // if !potentially_mergeables.contains(&child) {
                 //     potentially_mergeables.push(child);
                 // }

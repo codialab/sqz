@@ -133,9 +133,21 @@ impl PathSegment {
 
     pub fn to_walk_string(&self) -> String {
         if self.start.is_some() && self.end.is_some() {
-            format!("{}\t{}\t{}\t{}\t{}", self.sample, self.haplotype.as_ref().unwrap_or(&0.to_string()), self.seqid.as_ref().unwrap_or(&0.to_string()), self.start.unwrap(), self.end.unwrap())
+            format!(
+                "{}\t{}\t{}\t{}\t{}",
+                self.sample,
+                self.haplotype.as_ref().unwrap_or(&0.to_string()),
+                self.seqid.as_ref().unwrap_or(&0.to_string()),
+                self.start.unwrap(),
+                self.end.unwrap()
+            )
         } else {
-            format!("{}\t{}\t{}", self.sample, self.haplotype.as_ref().unwrap_or(&0.to_string()), self.seqid.as_ref().unwrap_or(&0.to_string()))
+            format!(
+                "{}\t{}\t{}",
+                self.sample,
+                self.haplotype.as_ref().unwrap_or(&0.to_string()),
+                self.seqid.as_ref().unwrap_or(&0.to_string())
+            )
         }
     }
 

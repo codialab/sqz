@@ -3,12 +3,12 @@ use crate::{
     color_set::transpose,
     is_edge_flipped,
     node_id::NodeId,
-    path_segment::PathSegment,
     node_id::RawNodeId,
     parser::{
         bufreader_from_compressed_gfa, get_nodes_path, get_nodes_walk, parse_path_identifier,
         parse_walk_identifier,
     },
+    path_segment::PathSegment,
     Rule, Rules,
 };
 use itertools::Itertools;
