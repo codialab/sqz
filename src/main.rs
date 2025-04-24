@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::BufRead;
 use std::mem;
+use itertools::Itertools;
 
 const MAX_OCCURENCES: usize = 2;
 
@@ -303,7 +304,7 @@ pub fn build_qlines(
                 .and_modify(|e| e.push(non_terminal))
                 .or_insert(vec![non_terminal]);
         }
-        if v >= offset && u != v {
+        if v >= offset {
             parents
                 .entry(v.get_forward())
                 .and_modify(|e| e.push(non_terminal))
@@ -385,13 +386,13 @@ fn is_mergeable(
 }
 
 fn replace_rule(text: &mut Vec<NodeId>, rule: NodeId, replacement: Vec<NodeId>) {
-    let mut idx = 0;
-    let mut reverse = false;
+    let mut idxs = Vec::new();
+    let mut reverses = Vec::new();
     let mut no_hit = true;
     for (index, node) in text.iter().enumerate() {
         if node.get_forward() == rule {
-            idx = index;
-            reverse = node.get_orientation() == 1;
+            idxs.push(index);
+            reverses.push(node.get_orientation() == 1);
             no_hit = false;
         }
     }
@@ -399,19 +400,23 @@ fn replace_rule(text: &mut Vec<NodeId>, rule: NodeId, replacement: Vec<NodeId>) 
         log::warn!("Cannot replace rule: {}", rule);
         return;
     }
-    let rule_to_insert = if reverse {
-        reverse_rule(&replacement)
-    } else {
-        replacement
-    };
-    text.splice(idx..idx + 1, rule_to_insert);
+    for i in (0..idxs.len()).rev() {
+        let idx = idxs[i];
+        let reverse = reverses[i];
+        let rule_to_insert = if reverse {
+            reverse_rule(&replacement)
+        } else {
+            replacement.clone()
+        };
+        text.splice(idx..idx + 1, rule_to_insert);
+    }
 }
 
 fn get_correct_path_ids(
     parents: &HashMap<NodeId, Vec<NodeId>>,
     rules: &Rules,
     rule: NodeId,
-) -> Vec<u64> {
+) -> Vec<(u64, usize)> {
     let mut all_path_ids = rules[&rule].colors.colors.get_path_counts();
     for parent in parents.get(&rule).unwrap_or(&Vec::new()).iter() {
         let parent_path_ids = rules[parent].colors.colors.get_path_counts();
@@ -427,8 +432,8 @@ fn get_correct_path_ids(
     }
     all_path_ids
         .into_iter()
-        .filter_map(|(path_id, count)| if count > 0 { Some(path_id) } else { None })
-        .collect::<Vec<u64>>()
+        .filter_map(|(path_id, count)| if count > 0 { Some((path_id, count)) } else { None })
+        .collect::<Vec<(u64, usize)>>()
 }
 
 fn simplify_rules(
@@ -451,7 +456,7 @@ fn simplify_rules(
             continue;
         }
         log::debug!("Simplifying rule: {}", rule);
-        for parent in parents.get(&rule).unwrap_or(&Vec::new()).iter() {
+        for parent in parents.get(&rule).unwrap_or(&Vec::new()).iter().unique() {
             let replacement = rules[&rule].right.clone();
             replace_rule(
                 &mut rules.get_mut(parent).expect("Rules contain parent").right,
@@ -459,13 +464,13 @@ fn simplify_rules(
                 replacement,
             );
         }
-        for path_id in get_correct_path_ids(&parents, &rules, rule) {
+        for (path_id, _c) in get_correct_path_ids(&parents, &rules, rule) {
             let path_name = &path_id_to_path_segment[&path_id];
             let replacement = rules[&rule].right.clone();
             replace_rule(
                 encoded_paths
                     .get_mut(&path_name)
-                    .expect("Encoded paths contains path"),
+                    .expect("\tEncoded paths contains path"),
                 rule,
                 replacement,
             );
@@ -482,9 +487,6 @@ fn simplify_rules(
                     .get_mut(&child)
                     .expect("Parents of child contain node")
                     .extend(rule_parents);
-                // if !potentially_mergeables.contains(&child) {
-                //     potentially_mergeables.push(child);
-                // }
             }
         }
         rules.remove(&rule);
@@ -499,9 +501,12 @@ fn check_rule_usability(
     encoded_paths: &HashMap<PathSegment, Vec<NodeId>>,
     rules: &Rules,
     parents: &HashMap<NodeId, Vec<NodeId>>,
+    k: usize,
+    node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
 ) -> () {
     let mut rule_usage_path: HashMap<NodeId, usize> = HashMap::new();
     let mut rule_usage_rule: HashMap<NodeId, usize> = HashMap::new();
+    let node_names_by_id: HashMap<RawNodeId, Vec<u8>> = node_ids_by_name.into_iter().map(|(k, v)| (*v, k.to_owned())).collect();
     let mut everything_ok = true;
     for (_path_name, path) in encoded_paths {
         for node in path {
@@ -512,8 +517,9 @@ fn check_rule_usability(
                     .or_insert(1);
                 if !rules.contains_key(&node.get_forward()) {
                     log::error!(
-                        "Rule {} was mistakenly deleted (used in path)",
-                        node.get_forward()
+                        "Rule {} was mistakenly deleted (used in path: {})",
+                        node.get_forward(),
+                        _path_name,
                     );
                     everything_ok = false;
                 }
@@ -545,21 +551,23 @@ fn check_rule_usability(
     for rule in &used_rules {
         if rule_usage_path.get(rule).copied().unwrap_or_default()
             + rule_usage_rule.get(rule).copied().unwrap_or_default()
-            == 1
+            < k
         {
             let path_appearance = rule_usage_path.get(rule).copied().unwrap_or_default() == 1;
             if parents.contains_key(rule) {
                 log::warn!(
-                    "Rule {} can be removed, but wasn't (path: {}, parents: {:?}, colors: {:?})",
+                    "Rule {} ({}) can be removed, but wasn't (path: {}, parents: {:?}, colors: {:?})",
                     rule,
+                    std::str::from_utf8(&node_names_by_id[&rule.get_id()]).unwrap(),
                     path_appearance,
                     parents[rule],
                     rules[rule].colors
                 );
             } else {
                 log::warn!(
-                    "Rule {} can be removed, but wasn't (path: {}, parents: zero, colors: {:?})",
+                    "Rule {} ({}) can be removed, but wasn't (path: {}, parents: zero, colors: {:?})",
                     rule,
+                    std::str::from_utf8(&node_names_by_id[&rule.get_id()]).unwrap(),
                     path_appearance,
                     rules[rule].colors
                 );
@@ -661,7 +669,7 @@ fn write_decompressed_lines(gfa_file: &str, decompressed_paths: HashMap<PathSegm
                     print!(",{}{}", std::str::from_utf8_unchecked(&node_names_by_id[&node.get_id()]), if node.is_forward() { "+" } else { "-" });
                 }
             }
-            println!();
+            println!("\t*");
         }
     }
 }
@@ -760,9 +768,16 @@ fn main() {
                 &path_id_to_path_segment,
                 k,
             );
-            check_rule_usability(offset, &encoded_paths, &rules, &parents);
+            let rules = simplify_rules(
+                rules,
+                &mut safe_parents,
+                &mut encoded_paths,
+                &path_id_to_path_segment,
+                k,
+            );
             let non_terminal_node_names = get_non_terminal_node_names(&rules, prefix);
             node_ids_by_name.extend(non_terminal_node_names);
+            check_rule_usability(offset, &encoded_paths, &rules, &parents, k, &node_ids_by_name);
             write_compressed_lines(&file, &rules, &encoded_paths, node_ids_by_name);
             log::info!("{} rules were written", rules.len());
         }

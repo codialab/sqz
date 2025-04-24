@@ -71,7 +71,7 @@ impl fmt::Debug for NodeId {
             f,
             "{}{}",
             if self.0 & 1 == 0 { '>' } else { '<' },
-            (self.0 >> 1) + 1
+            (self.0 >> 1)
         )
     }
 }
