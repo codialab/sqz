@@ -35,7 +35,7 @@ impl NodeId {
     }
 
     pub fn get_index_string(&self) -> String {
-        format!("{}", (self.0 >> 1) + 1)
+        format!("{}", self.0 >> 1)
     }
 
     pub fn is_forward(&self) -> bool {
@@ -83,7 +83,7 @@ impl fmt::Display for NodeId {
             f,
             "{}{}",
             if self.0 & 1 == 0 { '>' } else { '<' },
-            (self.0 >> 1) + 1
+            (self.0 >> 1)
         )
     }
 }
