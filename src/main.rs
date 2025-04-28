@@ -729,7 +729,7 @@ enum Commands {
         #[arg(short, default_value_t = 2)]
         k: usize,
 
-        /// Prefix that is used for non-terminal identifiers (i.e. Q-lines)
+        /// Prefix that is used for non-terminal node identifiers
         #[arg(short, long, default_value = "Q")]
         prefix: String,
     },
