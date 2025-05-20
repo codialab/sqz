@@ -1,5 +1,10 @@
 # Human-readable compression of GFA pangenome graphs
 
+<p align="center">
+  <img src="logo.png" height=500px />
+</p>
+
+
 `sqz` is a tool for compressing and decompressing GFA files. It uses a modified version of the GFA-format containing `Q`- and `Z`-lines.
 
 ## Usage
