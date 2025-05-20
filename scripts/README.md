@@ -7,7 +7,7 @@ To run use:
 ```bash
 ./scripts/compress-gfa-sequitur.sh <GFA-FILE> 2
 ```
-(`2` means the number of appearances when a new `Q`-line should be created)
+(`2` means the minimum number of repeats a digram must have so that it is replaced by a non-terminal symbol and the creation of a `Q`-line )
 
 ## count-path-length.py
 Used to get the lengths of paths in nodes for the analysis of `sqz`.
