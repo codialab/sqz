@@ -1,4 +1,4 @@
-# Human-readable compression of GFA pangenome graphs
+# Human-readable path compression in GFA-formatted pangenome graphs
 
 <p align="center">
   <img src="logo.png" height=500px />
