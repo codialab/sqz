@@ -88,5 +88,5 @@ S       s13     GATT
 L       s11     +       s12     -       0M
 L       s12     -       s13     +       0M
 L       s11     +       s13     +       0M
-Q   q1  >s11<s12
+Q       q1  >s11<s12
 Z       NA12878 1       chr1    0       11      >q1>s13
