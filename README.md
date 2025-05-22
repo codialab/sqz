@@ -81,7 +81,6 @@ identifier oft a Q-line. A valid walk must exist in the graph.
 ### Example
 
 ```txt
-H       VN:Z:1.1
 S       s11     ACCTT
 S       s12     TC
 S       s13     GATT
