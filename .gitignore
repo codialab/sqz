@@ -4,3 +4,5 @@
 *.txt
 *.vg
 *.log
+*.gbwt
+/vendor
