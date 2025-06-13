@@ -6,3 +6,5 @@
 *.log
 *.gbwt
 /vendor
+*.csv
+*.py

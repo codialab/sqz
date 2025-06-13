@@ -709,6 +709,43 @@ fn get_non_terminal_node_names(rules: &HashMap<NodeId, Rule>, prefix: String) ->
     result
 }
 
+fn print_statistics(rules: &HashMap<NodeId, (Rule, usize)>) {
+    for rule in rules {
+        let l = rule.1.1 as i64;
+        let o = rule.1.0.colors.len() as i64;
+        let score = (l - 1) * o - l - 1;
+        println!("{}, {}, {}, {}", rule.0, l, o, score);
+    }
+}
+
+fn get_rules_with_length(rules: HashMap<NodeId, Rule>) -> HashMap<NodeId, (Rule, usize)> {
+    let mut rules: HashMap<NodeId, (Rule, usize)> = rules.into_iter().map(|(k, v)| (k, (v, 0))).collect();
+    let all_meta_nodes: Vec<_> = rules.keys().copied().collect();
+    for meta_node in all_meta_nodes {
+        if rules[&meta_node].1 == 0 {
+            set_rule_length(&meta_node, &mut rules);
+        }
+    }
+    rules
+}
+
+fn set_rule_length(key: &NodeId, rules: &mut HashMap<NodeId, (Rule, usize)>) {
+    let mut length = 0;
+    let children = rules[key].0.right.clone();
+    for child in children {
+        let child = child.get_forward();
+        if !rules.contains_key(&child) {
+            length += 1;
+        } else {
+            if rules[&child].1 == 0 {
+                set_rule_length(&child, rules);
+            }
+            length += rules[&child].1;
+        }
+    }
+    rules.get_mut(key).expect("rules contain key").1 = length;
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -778,7 +815,9 @@ fn main() {
             let non_terminal_node_names = get_non_terminal_node_names(&rules, prefix);
             node_ids_by_name.extend(non_terminal_node_names);
             check_rule_usability(offset, &encoded_paths, &rules, &parents, k, &node_ids_by_name);
-            write_compressed_lines(&file, &rules, &encoded_paths, node_ids_by_name);
+            let rules = get_rules_with_length(rules);
+            print_statistics(&rules);
+            // write_compressed_lines(&file, &rules, &encoded_paths, node_ids_by_name);
             log::info!("{} rules were written", rules.len());
         }
         Commands::Decompress { file, use_p_lines } => {
