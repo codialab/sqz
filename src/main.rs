@@ -33,6 +33,15 @@ pub struct Rule {
     colors: OrdColorSet,
 }
 
+#[derive(Clone, Debug)]
+pub struct FRule {
+    left: NodeId,
+    right: Vec<NodeId>,
+    length: usize,
+    occurence: usize,
+    parents: Vec<NodeId>,
+}
+
 impl fmt::Debug for Rule {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} -> {:?}", self.left, self.right,)
@@ -709,41 +718,47 @@ fn get_non_terminal_node_names(rules: &HashMap<NodeId, Rule>, prefix: String) ->
     result
 }
 
-fn print_statistics(rules: &HashMap<NodeId, (Rule, usize)>) {
+fn print_statistics(rules: &HashMap<NodeId, FRule>) {
     for rule in rules {
-        let l = rule.1.1 as i64;
-        let o = rule.1.0.colors.len() as i64;
+        let l = rule.1.length as i64;
+        let o = rule.1.occurence as i64;
         let score = (l - 1) * o - l - 1;
         println!("{}, {}, {}, {}", rule.0, l, o, score);
     }
 }
 
-fn get_rules_with_length(rules: HashMap<NodeId, Rule>) -> HashMap<NodeId, (Rule, usize)> {
-    let mut rules: HashMap<NodeId, (Rule, usize)> = rules.into_iter().map(|(k, v)| (k, (v, 0))).collect();
+fn get_rules_with_length(rules: HashMap<NodeId, Rule>, parents: HashMap<NodeId, Vec<NodeId>>) -> HashMap<NodeId, FRule> {
+    let mut rules: HashMap<NodeId, FRule> = rules.into_iter().map(|(k, v)| (k, FRule {
+        left: v.left,
+        right: v.right,
+        occurence: v.colors.len(),
+        length: 0,
+        parents: parents[&k].clone(),
+    })).collect();
     let all_meta_nodes: Vec<_> = rules.keys().copied().collect();
     for meta_node in all_meta_nodes {
-        if rules[&meta_node].1 == 0 {
+        if rules[&meta_node].length == 0 {
             set_rule_length(&meta_node, &mut rules);
         }
     }
     rules
 }
 
-fn set_rule_length(key: &NodeId, rules: &mut HashMap<NodeId, (Rule, usize)>) {
+fn set_rule_length(key: &NodeId, rules: &mut HashMap<NodeId, FRule>) {
     let mut length = 0;
-    let children = rules[key].0.right.clone();
+    let children = rules[key].right.clone();
     for child in children {
         let child = child.get_forward();
         if !rules.contains_key(&child) {
             length += 1;
         } else {
-            if rules[&child].1 == 0 {
+            if rules[&child].length == 0 {
                 set_rule_length(&child, rules);
             }
-            length += rules[&child].1;
+            length += rules[&child].length;
         }
     }
-    rules.get_mut(key).expect("rules contain key").1 = length;
+    rules.get_mut(key).expect("rules contain key").length = length;
 }
 
 #[derive(Parser, Debug)]
@@ -794,30 +809,11 @@ fn main() {
             let (mut neighbors, mut digrams, path_id_to_path_segment) =
                 parse_gfa_paths_walks(&file, &node_ids_by_name);
             let (rules, offset, parents) = build_qlines(&mut neighbors, &mut digrams);
-            let mut encoded_paths = encode_paths2(&file, &rules, offset, &node_ids_by_name);
             let mut prules = rules.iter().collect::<Vec<_>>();
             prules.sort_by_key(|r| r.0.get_idx());
             let mut safe_parents = parents.clone();
-            let rules = simplify_rules(
-                rules,
-                &mut safe_parents,
-                &mut encoded_paths,
-                &path_id_to_path_segment,
-                k,
-            );
-            let rules = simplify_rules(
-                rules,
-                &mut safe_parents,
-                &mut encoded_paths,
-                &path_id_to_path_segment,
-                k,
-            );
-            let non_terminal_node_names = get_non_terminal_node_names(&rules, prefix);
-            node_ids_by_name.extend(non_terminal_node_names);
-            check_rule_usability(offset, &encoded_paths, &rules, &parents, k, &node_ids_by_name);
-            let rules = get_rules_with_length(rules);
+            let rules = get_rules_with_length(rules, parents);
             print_statistics(&rules);
-            // write_compressed_lines(&file, &rules, &encoded_paths, node_ids_by_name);
             log::info!("{} rules were written", rules.len());
         }
         Commands::Decompress { file, use_p_lines } => {
