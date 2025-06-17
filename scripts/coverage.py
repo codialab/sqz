@@ -56,24 +56,24 @@ def propagate_counts(C, G, v2id):
 
 def main(nodes, wlines, qlines, zlines, out):
 
+    hapnames = sorted(set(map(lambda x: x[0].rsplit('#',2)[0], zlines + wlines)))
+    hapmap = dict(zip(hapnames, range(len(hapnames))))
+
     coverage = None
     v2id = dict(zip(chain(nodes, map(lambda x: x[0], qlines)), range(len(nodes)+len(qlines))))
+    C = np.zeros(shape=(len(v2id), len(hapnames)), dtype=bool)
     if len(zlines):
-        C = np.zeros(shape=(len(v2id), len(zlines)), dtype=bool)
-        for i, (_, seq) in enumerate(zlines):
+        for zid, seq in zlines:
             for _, v in seq:
-                C[v2id[v], i] |= True
+                C[v2id[v], hapmap[zid.rsplit('#', 2)[0]]] |= True
         G = build_dag(qlines)
         propagate_counts(C, G, v2id)
-        coverage = C.sum(axis=1)
     elif len(wlines):
-        coverage = np.zeros(shape=len(v2id), dtype=np.int64)
-        for _, seq in wlines:
-            C = np.zeros(shape=len(v2id), dtype=bool)
+        for wid, seq in wlines:
             for _, v in seq:
-                C[v2id[v]] |= True
-            coverage += C.astype(np.int64)
+                C[v2id[v], hapmap[wid.rsplit('#', 2)[0]]] |= True
 
+    coverage = C.sum(axis=1)
     for i in range(len(nodes)):
         print(f'{nodes[i]}\t{coverage[i]}', file=out)
 
