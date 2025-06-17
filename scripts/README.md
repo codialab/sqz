@@ -14,3 +14,7 @@ Used to get the lengths of paths in nodes for the analysis of `sqz`.
 
 ## coverage.py
 Can be used to calculate the coverage of nodes in either a compressed or uncompressed GFA file. Used for the analysis of `sqz`
+
+```bash
+usage: coverage.py [-h] gfa_file
+```
