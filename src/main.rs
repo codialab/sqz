@@ -38,8 +38,14 @@ pub struct FRule {
     left: NodeId,
     right: Vec<NodeId>,
     length: usize,
-    occurence: usize,
+    occurrence: usize,
     parents: Vec<NodeId>,
+}
+
+impl FRule {
+    fn get_score(&self) -> i64 {
+        (self.length as i64 - 1) * self.occurrence as i64 - self.length as i64 - 1
+    }
 }
 
 impl fmt::Debug for Rule {
@@ -721,7 +727,7 @@ fn get_non_terminal_node_names(rules: &HashMap<NodeId, Rule>, prefix: String) ->
 fn print_statistics(rules: &HashMap<NodeId, FRule>) {
     for rule in rules {
         let l = rule.1.length as i64;
-        let o = rule.1.occurence as i64;
+        let o = rule.1.occurrence as i64;
         let score = (l - 1) * o - l - 1;
         println!("{}, {}, {}, {}", rule.0, l, o, score);
     }
@@ -731,7 +737,7 @@ fn get_rules_with_length(rules: HashMap<NodeId, Rule>, parents: HashMap<NodeId, 
     let mut rules: HashMap<NodeId, FRule> = rules.into_iter().map(|(k, v)| (k, FRule {
         left: v.left,
         right: v.right,
-        occurence: v.colors.len(),
+        occurrence: v.colors.len(),
         length: 0,
         parents: parents[&k].clone(),
     })).collect();
@@ -742,6 +748,42 @@ fn get_rules_with_length(rules: HashMap<NodeId, Rule>, parents: HashMap<NodeId, 
         }
     }
     rules
+}
+
+fn get_max_rule(rules: &HashMap<NodeId, FRule>) -> NodeId {
+    let initial_rule = rules.iter().map(|(k, v)| k).next().expect("Rules has at least one rule").clone();
+    let initial_score = rules[&initial_rule].get_score();
+    let (highest_scoring_node, _) = rules.iter().fold((initial_rule, initial_score), |(p_r, p_s), (rn, r)| {
+        if r.get_score() > p_s {
+            (*rn, r.get_score())
+        } else {
+            (p_r, p_s)
+        }
+    });
+    highest_scoring_node
+}
+
+fn null_all_parents(rule: &NodeId, rules: &mut HashMap<NodeId, FRule>) {
+    let parents = rules[&rule].parents.clone();
+    for parent in &parents {
+        rules.get_mut(parent).expect("Parent should be a valid rule").occurrence = 0;
+        null_all_parents(parent, rules);
+    }
+}
+
+fn subtract_all_children(rule: &NodeId, rules: &mut HashMap<NodeId, FRule>, value: usize) {
+    let children = rules[&rule].right.clone();
+    for child in &children {
+        let child = &child.get_forward();
+        rules.get_mut(child).expect("Child should be a valid rule").occurrence -= value;
+        subtract_all_children(child, rules, value);
+    }
+}
+
+fn get_flat_rules(rules: &mut HashMap<NodeId, FRule>) {
+    loop {
+        let current = get_max_rule(&rules);
+    }
 }
 
 fn set_rule_length(key: &NodeId, rules: &mut HashMap<NodeId, FRule>) {
