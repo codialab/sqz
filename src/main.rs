@@ -3,6 +3,7 @@ mod compressor;
 mod node_id;
 mod parser;
 mod path_segment;
+mod priority;
 
 use clap::{Parser, Subcommand};
 use color_set::OrdColorSet;
@@ -19,6 +20,7 @@ use std::fmt;
 use std::io::BufRead;
 use std::mem;
 use itertools::Itertools;
+use priority::{FRule, Priority};
 
 const MAX_OCCURENCES: usize = 2;
 
@@ -31,21 +33,6 @@ pub struct Rule {
     left: NodeId,
     right: Vec<NodeId>,
     colors: OrdColorSet,
-}
-
-#[derive(Clone, Debug)]
-pub struct FRule {
-    left: NodeId,
-    right: Vec<NodeId>,
-    length: usize,
-    occurrence: usize,
-    parents: Vec<NodeId>,
-}
-
-impl FRule {
-    fn get_score(&self) -> i64 {
-        (self.length as i64 - 1) * self.occurrence as i64 - self.length as i64 - 1
-    }
 }
 
 impl fmt::Debug for Rule {
@@ -750,67 +737,34 @@ fn get_rules_with_length(rules: HashMap<NodeId, Rule>, parents: HashMap<NodeId, 
     rules
 }
 
-fn get_max_rule(rules: &HashMap<NodeId, FRule>) -> Option<NodeId> {
-    let initial_rule = rules.iter().map(|(k, v)| k).next().expect("Rules has at least one rule").clone();
-    let initial_score = 0;
-    let (highest_scoring_node, highest_score) = rules.iter().fold((initial_rule, initial_score), |(p_r, p_s), (rn, r)| {
-        if r.get_score() > p_s {
-            (*rn, r.get_score())
-        } else {
-            (p_r, p_s)
-        }
-    });
-    if highest_score == 0 {
-        None
-    } else {
-        Some(highest_scoring_node)
-    }
-}
-
-fn null_all_parents(rule: &NodeId, rules: &mut HashMap<NodeId, FRule>) {
-    let parents = rules[&rule].parents.clone();
+fn null_all_parents(rule: &NodeId, rules: &mut Priority) {
+    let parents = rules.get_parents(rule);
     for parent in &parents {
-        rules.get_mut(parent).expect("Parent should be a valid rule").occurrence = 0;
+        rules.change_occurrence(parent, 0);
         null_all_parents(parent, rules);
     }
 }
 
-fn subtract_all_children(rule: &NodeId, rules: &mut HashMap<NodeId, FRule>, value: usize) {
-    let children = rules[&rule].right.clone();
+fn subtract_all_children(rule: &NodeId, rules: &mut Priority, value: usize) {
+    let children = rules.get_children(rule);
     for child in &children {
         let child = &child.get_forward();
         if rules.contains_key(child) {
-            rules.get_mut(child).expect("Child should be a valid rule").occurrence -= value;
+            rules.subtract_occurrence(child, value);
             subtract_all_children(child, rules, value);
         }
     }
 }
 
-fn get_full_rule(rule: &NodeId, rules: &mut HashMap<NodeId, FRule>) -> Vec<NodeId> {
-    let children = rules[&rule].right.clone();
-    let mut full_rule: Vec<NodeId> = Vec::new();
-    for oriented_child in &children {
-        let child = &oriented_child.get_forward();
-        if rules.contains_key(child) {
-            let full_sub_rule = get_full_rule(child, rules);
-            let full_sub_rule = if !oriented_child.is_forward() { full_sub_rule.into_iter().rev().map(|x| x.flip()).collect::<Vec<NodeId>>() } else { full_sub_rule };
-            full_rule.extend(full_sub_rule);
-        } else {
-            full_rule.push(*oriented_child);
-        }
-    }
-    full_rule
-}
-
-fn get_flat_rules(rules: &mut HashMap<NodeId, FRule>) -> HashMap<NodeId, Vec<NodeId>> {
+fn get_flat_rules(rules: &mut Priority) -> HashMap<NodeId, Vec<NodeId>> {
     let mut result = HashMap::new();
     let mut rule_counter = 0;
     log::info!("Total of {} non-flat rules", rules.len());
-    while let Some(current) = get_max_rule(&rules) {
+    while let Some(current) = rules.get_max_rule() {
         null_all_parents(&current, rules);
-        subtract_all_children(&current, rules, rules[&current].occurrence);
-        rules.get_mut(&current).expect("Current in rules").occurrence = 0;
-        let full_rule = get_full_rule(&current, rules);
+        subtract_all_children(&current, rules, rules.get_occurrence(&current));
+        rules.change_occurrence(&current, 0);
+        let full_rule = rules.get_full_rule(&current);
         result.insert(current, full_rule);
         rule_counter += 1;
         if rule_counter % 1000 == 0 {
@@ -888,8 +842,9 @@ fn main() {
             let mut prules = rules.iter().collect::<Vec<_>>();
             prules.sort_by_key(|r| r.0.get_idx());
             // let mut safe_parents = parents.clone();
-            let mut rules = get_rules_with_length(rules, parents);
+            let rules = get_rules_with_length(rules, parents);
             // print_statistics(&rules);
+            let mut rules = Priority::from(rules);
             let flat_rules = get_flat_rules(&mut rules);
             log::info!("{} rules were written", flat_rules.len());
         }
