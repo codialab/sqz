@@ -739,7 +739,7 @@ fn get_rules_with_length(rules: HashMap<NodeId, Rule>, parents: HashMap<NodeId, 
         right: v.right,
         occurrence: v.colors.len(),
         length: 0,
-        parents: parents[&k].clone(),
+        parents: parents.get(&k).cloned().unwrap_or_default(),
     })).collect();
     let all_meta_nodes: Vec<_> = rules.keys().copied().collect();
     for meta_node in all_meta_nodes {
@@ -750,17 +750,21 @@ fn get_rules_with_length(rules: HashMap<NodeId, Rule>, parents: HashMap<NodeId, 
     rules
 }
 
-fn get_max_rule(rules: &HashMap<NodeId, FRule>) -> NodeId {
+fn get_max_rule(rules: &HashMap<NodeId, FRule>) -> Option<NodeId> {
     let initial_rule = rules.iter().map(|(k, v)| k).next().expect("Rules has at least one rule").clone();
-    let initial_score = rules[&initial_rule].get_score();
-    let (highest_scoring_node, _) = rules.iter().fold((initial_rule, initial_score), |(p_r, p_s), (rn, r)| {
+    let initial_score = 0;
+    let (highest_scoring_node, highest_score) = rules.iter().fold((initial_rule, initial_score), |(p_r, p_s), (rn, r)| {
         if r.get_score() > p_s {
             (*rn, r.get_score())
         } else {
             (p_r, p_s)
         }
     });
-    highest_scoring_node
+    if highest_score == 0 {
+        None
+    } else {
+        Some(highest_scoring_node)
+    }
 }
 
 fn null_all_parents(rule: &NodeId, rules: &mut HashMap<NodeId, FRule>) {
@@ -775,15 +779,45 @@ fn subtract_all_children(rule: &NodeId, rules: &mut HashMap<NodeId, FRule>, valu
     let children = rules[&rule].right.clone();
     for child in &children {
         let child = &child.get_forward();
-        rules.get_mut(child).expect("Child should be a valid rule").occurrence -= value;
-        subtract_all_children(child, rules, value);
+        if rules.contains_key(child) {
+            rules.get_mut(child).expect("Child should be a valid rule").occurrence -= value;
+            subtract_all_children(child, rules, value);
+        }
     }
 }
 
-fn get_flat_rules(rules: &mut HashMap<NodeId, FRule>) {
-    loop {
-        let current = get_max_rule(&rules);
+fn get_full_rule(rule: &NodeId, rules: &mut HashMap<NodeId, FRule>) -> Vec<NodeId> {
+    let children = rules[&rule].right.clone();
+    let mut full_rule: Vec<NodeId> = Vec::new();
+    for oriented_child in &children {
+        let child = &oriented_child.get_forward();
+        if rules.contains_key(child) {
+            let full_sub_rule = get_full_rule(child, rules);
+            let full_sub_rule = if !oriented_child.is_forward() { full_sub_rule.into_iter().rev().map(|x| x.flip()).collect::<Vec<NodeId>>() } else { full_sub_rule };
+            full_rule.extend(full_sub_rule);
+        } else {
+            full_rule.push(*oriented_child);
+        }
     }
+    full_rule
+}
+
+fn get_flat_rules(rules: &mut HashMap<NodeId, FRule>) -> HashMap<NodeId, Vec<NodeId>> {
+    let mut result = HashMap::new();
+    let mut rule_counter = 0;
+    log::info!("Total of {} non-flat rules", rules.len());
+    while let Some(current) = get_max_rule(&rules) {
+        null_all_parents(&current, rules);
+        subtract_all_children(&current, rules, rules[&current].occurrence);
+        rules.get_mut(&current).expect("Current in rules").occurrence = 0;
+        let full_rule = get_full_rule(&current, rules);
+        result.insert(current, full_rule);
+        rule_counter += 1;
+        if rule_counter % 1000 == 0 {
+            log::info!("Done {rule_counter} rules");
+        }
+    }
+    result
 }
 
 fn set_rule_length(key: &NodeId, rules: &mut HashMap<NodeId, FRule>) {
@@ -847,16 +881,17 @@ fn main() {
     match args.command {
         Commands::Compress { file, k, prefix } => {
             log::info!("Compressing file {} with k = {}", file, k);
-            let mut node_ids_by_name = parse_node_ids(&file, false);
-            let (mut neighbors, mut digrams, path_id_to_path_segment) =
+            let node_ids_by_name = parse_node_ids(&file, false);
+            let (mut neighbors, mut digrams, _path_id_to_path_segment) =
                 parse_gfa_paths_walks(&file, &node_ids_by_name);
-            let (rules, offset, parents) = build_qlines(&mut neighbors, &mut digrams);
+            let (rules, _offset, parents) = build_qlines(&mut neighbors, &mut digrams);
             let mut prules = rules.iter().collect::<Vec<_>>();
             prules.sort_by_key(|r| r.0.get_idx());
-            let mut safe_parents = parents.clone();
-            let rules = get_rules_with_length(rules, parents);
-            print_statistics(&rules);
-            log::info!("{} rules were written", rules.len());
+            // let mut safe_parents = parents.clone();
+            let mut rules = get_rules_with_length(rules, parents);
+            // print_statistics(&rules);
+            let flat_rules = get_flat_rules(&mut rules);
+            log::info!("{} rules were written", flat_rules.len());
         }
         Commands::Decompress { file, use_p_lines } => {
             log::info!("Decompressing file {}", file);
