@@ -7,7 +7,7 @@ mod priority;
 
 use clap::{Parser, Subcommand};
 use color_set::OrdColorSet;
-use compressor::encode_paths2;
+use compressor::encode_paths3;
 use node_id::{NodeId, RawNodeId};
 use parser::{
     bufreader_from_compressed_gfa, canonize, parse_compressed_lines, parse_gfa_paths_walks,
@@ -583,7 +583,7 @@ fn check_rule_usability(
     }
 }
 
-fn write_compressed_lines(gfa_file: &str, rules: &Rules, encoded_paths: &HashMap<PathSegment, Vec<NodeId>>, node_ids_by_name: HashMap<Vec<u8>, RawNodeId>) {
+fn write_compressed_lines(gfa_file: &str, rules: &HashMap<NodeId, Vec<NodeId>>, encoded_paths: &HashMap<PathSegment, Vec<NodeId>>, node_ids_by_name: HashMap<Vec<u8>, RawNodeId>) {
     log::info!("Writing output");
     let mut buf = vec![];
     let mut data = bufreader_from_compressed_gfa(gfa_file);
@@ -604,11 +604,11 @@ fn write_compressed_lines(gfa_file: &str, rules: &Rules, encoded_paths: &HashMap
     }
 
     // Print all Q-lines
-    for rule in rules.values() {
+    for rule in rules {
         unsafe {
-            print!("Q\t{}\t", std::str::from_utf8_unchecked(&node_names_by_id[&rule.left.get_id()]));
+            print!("Q\t{}\t", std::str::from_utf8_unchecked(&node_names_by_id[&rule.0.get_id()]));
         }
-        for node in &rule.right {
+        for node in rule.1 {
             unsafe {
                 print!("{}{}", if node.is_forward() { ">" } else { "<" }, std::str::from_utf8_unchecked(&node_names_by_id[&node.get_id()]));
             }
@@ -700,7 +700,7 @@ fn decompress(rules: HashMap<NodeId, Vec<NodeId>>, paths: HashMap<PathSegment, V
     decompressed_paths
 }
 
-fn get_non_terminal_node_names(rules: &HashMap<NodeId, Rule>, prefix: String) -> HashMap<Vec<u8>, RawNodeId> {
+fn get_non_terminal_node_names(rules: &HashMap<NodeId, Vec<NodeId>>, prefix: String) -> HashMap<Vec<u8>, RawNodeId> {
     let mut result = HashMap::new();
     let mut counter = 1;
     for non_terminal in rules.keys() {
@@ -835,7 +835,7 @@ fn main() {
     match args.command {
         Commands::Compress { file, k, prefix } => {
             log::info!("Compressing file {} with k = {}", file, k);
-            let node_ids_by_name = parse_node_ids(&file, false);
+            let mut node_ids_by_name = parse_node_ids(&file, false);
             let (mut neighbors, mut digrams, _path_id_to_path_segment) =
                 parse_gfa_paths_walks(&file, &node_ids_by_name);
             let (rules, _offset, parents) = build_qlines(&mut neighbors, &mut digrams);
@@ -846,7 +846,12 @@ fn main() {
             // print_statistics(&rules);
             let mut rules = Priority::from(rules);
             let flat_rules = get_flat_rules(&mut rules);
+            let rule_copy = flat_rules.clone();
             log::info!("{} rules were written", flat_rules.len());
+            let non_terminal_node_names = get_non_terminal_node_names(&flat_rules, prefix);
+            node_ids_by_name.extend(non_terminal_node_names);
+            let encoded_paths = encode_paths3(&file, flat_rules, _offset, &node_ids_by_name);
+            write_compressed_lines(&file, &rule_copy, &encoded_paths, node_ids_by_name);
         }
         Commands::Decompress { file, use_p_lines } => {
             log::info!("Decompressing file {}", file);

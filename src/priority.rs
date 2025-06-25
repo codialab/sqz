@@ -8,6 +8,10 @@ pub struct Priority {
 }
 
 impl Priority {
+    pub fn into_rules(self) -> HashMap<NodeId, Vec<NodeId>> {
+        self.rules.into_iter().map(|(k, v)| v.into_rule()).collect()
+    }
+
     pub fn from(rules: HashMap<NodeId, FRule>) -> Self {
         let mut scores: HashSet<i64> = HashSet::new();
         for (rule_name, rule) in &rules {
@@ -160,6 +164,10 @@ pub struct FRule {
 }
 
 impl FRule {
+    pub fn into_rule(self) -> (NodeId, Vec<NodeId>) {
+        (self.left, self.right)
+    }
+
     pub fn get_score(&self) -> i64 {
         let score = (self.length as i64 - 1) * self.occurrence as i64 - self.length as i64 - 1;
         if score < 0 {

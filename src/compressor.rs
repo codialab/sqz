@@ -15,6 +15,110 @@ use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 
+pub fn encode_paths3(
+    file: &str,
+    rules: HashMap<NodeId, Vec<NodeId>>,
+    offset: NodeId,
+    node_ids_by_name: &HashMap<Vec<u8>, RawNodeId>,
+) -> HashMap<PathSegment, Vec<NodeId>> {
+    let mut result: HashMap<PathSegment, Vec<NodeId>> = HashMap::new();
+    let mut data = bufreader_from_compressed_gfa(file);
+    let mut path_id = 0;
+
+    let mut rules_by_digram: HashMap<(NodeId, NodeId), Vec<(&Vec<NodeId>, NodeId)>> = HashMap::new();
+    for (left, right) in &rules {
+        let index = (right[0], right[1]);
+        if !rules_by_digram.contains_key(&index) {
+            rules_by_digram.insert(index, Vec::new());
+        }
+        rules_by_digram.get_mut(&index).expect("Rules_By_Digram entry exists").push((right, *left));
+    }
+    for (left, right) in &rules {
+        let index = (right[right.len() - 1].flip(), right[right.len() - 2].flip());
+        if !rules_by_digram.contains_key(&index) {
+            rules_by_digram.insert(index, Vec::new());
+        }
+        rules_by_digram.get_mut(&index).expect("Rules_By_Digram entry exists").push((right, *left));
+    }
+
+    // Sort entries (longest rules are viewed first)
+    for entry in rules_by_digram.iter_mut() {
+        entry.1.sort_unstable_by(|a, b| b.0.len().cmp(&a.0.len()))
+    }
+
+    // log::error!("RBD: {:?}", rules_by_digram);
+
+    let mut buf = vec![];
+    while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+        if buf[0] == b'P' || buf[0] == b'W' {
+            let (path_seg, buf_path_seg) = match buf[0] {
+                b'P' => parse_path_identifier(&buf),
+                b'W' => parse_walk_identifier(&buf),
+                _ => unreachable!(),
+            };
+
+            let nodes = match buf[0] {
+                b'P' => get_nodes_path(buf_path_seg, node_ids_by_name),
+                b'W' => get_nodes_walk(buf_path_seg, node_ids_by_name),
+                _ => unreachable!(),
+            };
+
+            // print_multiplicities(&nodes);
+            let encoded_path =
+                encode_path3(nodes, &rules_by_digram, path_id, offset);
+            result.insert(path_seg, encoded_path);
+
+            path_id += 1;
+        }
+        buf.clear();
+    }
+    result
+}
+
+pub fn encode_path3(
+    nodes: Vec<NodeId>,
+    rules_by_digram: &HashMap<(NodeId, NodeId), Vec<(&Vec<NodeId>, NodeId)>>,
+    _path_id: u64,
+    _offset: NodeId,
+) -> Vec<NodeId> {
+    let mut stack = Vec::new();
+    let mut counter = 0;
+    while counter < nodes.len() {
+        stack.push(nodes[counter]);
+        if stack.len() >= 2 && rules_by_digram.contains_key(&(stack[0], stack[1])) {
+            let (y, x) = (stack.pop().unwrap(), stack.pop().unwrap());
+            let index = (x, y);
+            let mut applied_entry = false;
+            for entry in &rules_by_digram[&index] {
+                let current_slice = &nodes[counter - 1..counter - 1 + entry.0.len()];
+                if entry.0[0] == index.0 {
+                    if current_slice == entry.0 {
+                        stack.push(entry.1);
+                        applied_entry = true;
+                        counter = counter - 2 + entry.0.len();
+                        break;
+                    }
+                } else {
+                    let current_slice: &Vec<NodeId> = &nodes[counter - 1..counter - 1 + entry.0.len()].iter().rev().map(|x| x.flip()).collect();
+                    if current_slice == entry.0 {
+                        stack.push(entry.1.flip());
+                        counter = counter - 2 + entry.0.len();
+                        applied_entry = true;
+                        break;
+                    }
+
+                }
+            }
+            if !applied_entry {
+                stack.push(x);
+                stack.push(y);
+            }
+        }
+        counter += 1;
+    }
+    stack
+}
+
 pub fn encode_paths2(
     file: &str,
     rules: &Rules,
