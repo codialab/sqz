@@ -759,7 +759,9 @@ fn subtract_all_children(rule: &NodeId, rules: &mut Priority, value: usize) {
 fn get_flat_rules(rules: &mut Priority) -> HashMap<NodeId, Vec<NodeId>> {
     let mut result = HashMap::new();
     let mut rule_counter = 0;
-    log::info!("Total of {} non-flat rules", rules.len());
+    let mut last_percent = 0;
+    let total_rules = rules.len();
+    log::info!("Total of {} non-flat rules", total_rules);
     while let Some(current) = rules.get_max_rule() {
         null_all_parents(&current, rules);
         subtract_all_children(&current, rules, rules.get_occurrence(&current));
@@ -767,8 +769,9 @@ fn get_flat_rules(rules: &mut Priority) -> HashMap<NodeId, Vec<NodeId>> {
         let full_rule = rules.get_full_rule(&current);
         result.insert(current, full_rule);
         rule_counter += 1;
-        if rule_counter % 1000 == 0 {
-            log::info!("Done {rule_counter} rules");
+        if rule_counter * 100 / total_rules > last_percent {
+            last_percent = rule_counter * 100 / total_rules;
+            log::info!("Used {last_percent}% of rules");
         }
     }
     result

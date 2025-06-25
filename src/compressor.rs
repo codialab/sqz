@@ -85,11 +85,14 @@ pub fn encode_path3(
     let mut counter = 0;
     while counter < nodes.len() {
         stack.push(nodes[counter]);
-        if stack.len() >= 2 && rules_by_digram.contains_key(&(stack[0], stack[1])) {
+        if stack.len() >= 2 && rules_by_digram.contains_key(&(stack[stack.len() - 2], stack[stack.len() - 1])) {
             let (y, x) = (stack.pop().unwrap(), stack.pop().unwrap());
             let index = (x, y);
             let mut applied_entry = false;
             for entry in &rules_by_digram[&index] {
+                if counter - 1 + entry.0.len() > nodes.len() {
+                    continue;
+                }
                 let current_slice = &nodes[counter - 1..counter - 1 + entry.0.len()];
                 if entry.0[0] == index.0 {
                     if current_slice == entry.0 {
