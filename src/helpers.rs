@@ -1,252 +1,340 @@
+use anyhow::{anyhow, Result};
+use std::hash::{BuildHasherDefault, DefaultHasher};
+use std::mem;
 use std::str::FromStr;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
 };
 
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
+
+use crate::helpers::utils::{Address, AddressNumber, CanonicalDigram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId};
+
+pub mod digram_occurrences;
+pub mod utils;
 
 static PATHID_PANSN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^([^#]+)(#[^#]+)?(#[^#].*)?$").unwrap());
 static PATHID_COORDS: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):([0-9]+)-([0-9]+)$").unwrap());
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct AddressNumber(u32);
+#[derive(Debug)]
+pub struct ReverseNodeRegistry {
+    inner: HashMap<UndirectedNodeId, Vec<u8>>,
+    prefix: Vec<u8>,
+    meta_node_number: u32,
+}
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Address(AddressNumber, AddressNumber);
-
-impl Address {
-    pub fn new(a: u32, b: u32) -> Self {
-        Address(AddressNumber(a), AddressNumber(b))
+impl ReverseNodeRegistry {
+    pub fn get_directed_name(&self, node: NodeId) -> String {
+        let o = match node.1 {
+            Orientation::Forward => '>',
+            Orientation::Backward => '<',
+        };
+        if let Some(node_name) = self.inner.get(&node.0) {
+            return format!("{}{}", o, str::from_utf8(node_name).unwrap());
+        } else {
+            return format!("{}@{}", o, node.0.0);
+        }
     }
 
-    pub fn flip(&self) -> Self {
-        Address(self.1, self.0)
+    pub fn get_name(&self, node: UndirectedNodeId) -> String {
+        if let Some(node_name) = self.inner.get(&node) {
+            return format!("{}", str::from_utf8(node_name).unwrap());
+        } else {
+            return format!("@{}", node.0);
+        }
+    }
+}
+
+
+#[derive(Debug)]
+pub struct NodeRegistry {
+    inner: HashMap<Vec<u8>, UndirectedNodeId>,
+    prefix: Vec<u8>,
+    meta_node_number: u32,
+}
+
+impl NodeRegistry {
+    pub fn new() -> Self {
+        Self {
+            inner: HashMap::new(),
+            prefix: vec![b'@'],
+            meta_node_number: 1,
+        }
     }
 
-    pub fn get_first(&self) -> AddressNumber {
+    #[allow(dead_code)]
+    pub fn from(h: HashMap<Vec<u8>, UndirectedNodeId>) -> Self {
+        Self {
+            inner: h,
+            prefix: vec![b'@'],
+            meta_node_number: 1,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[allow(dead_code)]
+    pub fn with_prefix(prefix: Vec<u8>) -> Self {
+        Self {
+            inner: HashMap::new(),
+            prefix,
+            meta_node_number: 1,
+        }
+    }
+
+    pub fn insert(&mut self, name: Vec<u8>) -> Result<()> {
+        self.get_inserted(name)
+            .ok_or_else(|| anyhow!("Inserted node name already appeared"))?;
+        Ok(())
+    }
+
+    fn get_inserted(&mut self, name: Vec<u8>) -> Option<UndirectedNodeId> {
+        let new_node_id = self.inner.len();
+        let new_node_id = UndirectedNodeId::new(new_node_id as u32);
+        self.inner.insert(name, new_node_id);
+        Some(new_node_id)
+    }
+
+    fn get_inserted_meta_node(&mut self, name: Vec<u8>) -> Option<UndirectedNodeId> {
+        let new_node_id = self.inner.len();
+        let new_node_id = UndirectedNodeId::new_meta_node(new_node_id as u32);
+        self.inner.insert(name, new_node_id);
+        Some(new_node_id)
+    }
+
+    #[allow(dead_code)]
+    pub fn get_inserted_if_not_exists(&mut self, name: Vec<u8>) -> UndirectedNodeId {
+        if self.inner.contains_key(&name) {
+            self.get_id(&name)
+        } else {
+            self.get_inserted(name.clone())
+                .expect(&format!("{:?}: {:?}", name, self.inner))
+        }
+    }
+
+    pub fn get_id(&self, name: &[u8]) -> UndirectedNodeId {
+        self.inner[name]
+    }
+
+    pub fn get_new_meta_node(&mut self) -> NodeId {
+        let mut new_name = self.prefix.clone();
+        new_name.extend(self.meta_node_number.to_string().into_bytes());
+        let new_node_id = self
+            .get_inserted_meta_node(new_name)
+            .expect("Meta node name should be unique");
+        self.meta_node_number += 1;
+        let new_node_id = NodeId::new(new_node_id, Orientation::Forward);
+        new_node_id
+    }
+}
+
+impl Into<ReverseNodeRegistry> for NodeRegistry {
+    fn into(self) -> ReverseNodeRegistry {
+        ReverseNodeRegistry {
+            inner: self.inner.into_iter().map(|(k, v)| (v, k)).collect(),
+            prefix: self.prefix,
+            meta_node_number: self.meta_node_number,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Occurrence(usize, Address);
+
+impl fmt::Debug for Occurrence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}: {:?}]", self.0, self.1)
+    }
+}
+
+impl Occurrence {
+    pub fn new(index: usize, address: Address) -> Self {
+        Self(index, address)
+    }
+
+    pub fn get_haplotype(&self) -> usize {
         self.0
     }
 
-    pub fn get_second(&self) -> AddressNumber {
+    pub fn get_address(&self) -> Address {
         self.1
     }
-}
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub enum Orientation {
-    Forward,
-    Backward,
-}
-
-impl Orientation {
-    pub fn flip(&self) -> Self {
-        match self {
-            Orientation::Forward => Orientation::Backward,
-            Orientation::Backward => Orientation::Forward,
-        }
+    #[allow(dead_code)]
+    pub fn right_side_replacement(
+        to_replace: HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
+        replacements: &HashMap<(usize, AddressNumber), AddressNumber>,
+        flip: bool,
+    ) -> HashSet<Occurrence, BuildHasherDefault<DefaultHasher>> {
+        to_replace
+            .into_iter()
+            .map(|o| {
+                if flip {
+                    let replace = replacements[&(o.0, o.1 .1)];
+                    Self(o.0, Address(o.1 .0, replace))
+                } else {
+                    let replace = replacements[&(o.0, o.1 .0)];
+                    Self(o.0, Address(replace, o.1 .1))
+                }
+            })
+            .collect()
     }
 
-    pub fn from_path(byte: u8) -> Self {
-        match byte {
-            b'+' => Orientation::Forward,
-            b'-' => Orientation::Backward,
-            _ => panic!(
-                "Orientation {} ({}) is not valid for paths",
-                byte, byte as char
-            ),
-        }
-    }
-
-    pub fn from_walk(byte: u8) -> Self {
-        match byte {
-            b'>' => Orientation::Forward,
-            b'<' => Orientation::Backward,
-            _ => panic!(
-                "Orientation {} ({}) is not valid for walks",
-                byte, byte as char
-            ),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct RawNodeId(u32);
-
-impl RawNodeId {
-    pub fn new(id: u32) -> Self {
-        Self(id)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct NodeId(RawNodeId, Orientation);
-
-impl NodeId {
-    pub fn new(id_of_node: RawNodeId, orientation: Orientation) -> Self {
-        Self(id_of_node, orientation)
-    }
-
+    #[allow(dead_code)]
     pub fn flip(&self) -> Self {
         Self(self.0, self.1.flip())
     }
 
-    pub fn same_node(&self, other: &Self) -> bool {
-        self.0 == other.0
+    #[allow(dead_code)]
+    pub fn flip_all(occurrences: &mut HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>) {
+        *occurrences = occurrences.iter().map(|o| o.flip()).collect();
     }
 
-    pub fn get_undirected(&self) -> RawNodeId {
-        self.0
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Digram(NodeId, NodeId);
-
-impl Digram {
-    pub fn new(u: NodeId, v: NodeId) -> Self {
-        Self(u, v)
-    }
-
-    pub fn canonize(&self) -> Self {
-        if self.0 > self.1 {
-            Self(self.1.flip(), self.0.flip())
-        } else {
-            self.clone()
+    pub fn split_self_loops(
+        occurrences: HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
+    ) -> (Vec<Occurrence>, Vec<Occurrence>, Vec<Occurrence>) {
+        let mut uv = Vec::new();
+        let mut qq = Vec::new();
+        let mut vq = Vec::new();
+        let sections = Self::sectionize(occurrences);
+        for mut section in sections {
+            if section.len() % 2 == 0 {
+                vq.push(
+                    section
+                        .pop()
+                        .expect("Section needs to contain at least one element"),
+                );
+            }
+            for mut chunk in &section.into_iter().chunks(2) {
+                let first = chunk.next().expect("Chunk contains at least one element");
+                uv.push(first.clone());
+                if let Some(second) = chunk.next() {
+                    println!("{:?} | {:?}", first, second);
+                    let replace = Self(second.0, Address(first.1.0, second.1.1));
+                    qq.push(replace);
+                }
+            }
         }
+        (uv, qq, vq)
     }
 
-    pub fn is_canonical(&self) -> bool {
-        if self.0 > self.1 {
-            false
-        } else {
-            true
+    #[allow(dead_code)]
+    pub fn split_pre_self_loop(
+        mut vu: Vec<Occurrence>,
+        uv: &HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
+    ) -> (
+        Vec<Occurrence>,
+        Vec<Occurrence>,
+        Vec<Occurrence>,
+        Vec<Occurrence>,
+    ) {
+        let mut qq = Vec::new();
+        let mut vq = Vec::new();
+        let mut qu = Vec::new();
+        for occurrence_idx in 0..vu.len() {
+            let mut matches_first_number = false;
+            let mut matches_second_number = false;
+            let occurrence = &vu[occurrence_idx];
+            for uv_occurrence in uv {
+                if occurrence.0 == uv_occurrence.0 {
+                    if occurrence.1 .0 == uv_occurrence.1 .1 {
+                        matches_first_number = true;
+                    } else if occurrence.1 .1 == uv_occurrence.1 .0 {
+                        matches_second_number = true;
+                    }
+                }
+            }
+            match (matches_first_number, matches_second_number) {
+                (true, true) => qq.push(vu.swap_remove(occurrence_idx)),
+                (false, true) => vq.push(vu.swap_remove(occurrence_idx)),
+                (true, false) => qu.push(vu.swap_remove(occurrence_idx)),
+                (false, false) => {}
+            }
         }
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct CanonicalDigram(NodeId, NodeId);
-
-impl CanonicalDigram {
-    pub fn get_u(&self) -> NodeId {
-        self.0
+        (qq, vq, qu, vu)
     }
 
-    pub fn get_v(&self) -> NodeId {
-        self.1
-    }
-}
-
-impl From<Digram> for CanonicalDigram {
-    fn from(item: Digram) -> Self {
-        let canonical = item.canonize();
-        Self(canonical.0, canonical.1)
-    }
-}
-
-impl Into<Digram> for CanonicalDigram {
-    fn into(self) -> Digram {
-        Digram(self.0, self.1)
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct LocalizedDigram(Digram, Address);
-
-impl LocalizedDigram {
-    pub fn new(digram: Digram, address: Address) -> Self {
-        Self(digram, address)
-    }
-
-    pub fn canonize(&self) -> Self {
-        if self.0.is_canonical() {
-            self.clone()
-        } else {
-            Self(self.0.canonize(), self.1.flip())
-        }
-    }
-
-    pub fn is_canonical(&self) -> bool {
-        if self.0.is_canonical() {
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn split_to_canonical(self) -> (CanonicalDigram, Address) {
-        let canonical = self.canonize();
-        (canonical.0.into(), canonical.1)
+    fn sectionize(
+        occurrences: HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
+    ) -> Vec<Vec<Occurrence>> {
+        let mut occurrences: Vec<Occurrence> = occurrences.into_iter().collect();
+        occurrences.sort();
+        let mut sections: Vec<Vec<Occurrence>> = Vec::new();
+        let mut current_section = vec![occurrences[0].clone()];
+        occurrences
+            .iter()
+            .tuple_windows()
+            .for_each(|(first, second)| {
+                if (first.0 == second.0) && (second.1 .0 == first.1 .1 || second.1 .1 == first.1 .0)
+                {
+                    current_section.push(second.clone());
+                } else {
+                    sections.push(mem::take(&mut current_section));
+                    current_section = vec![second.clone()];
+                }
+            });
+        sections.push(mem::take(&mut current_section));
+        sections
     }
 }
 
 pub type Haplotype = Vec<LocalizedDigram>;
 
-pub struct D {
-    inner: HashMap<CanonicalDigram, HashSet<(usize, Address)>>,
-}
-
-impl D {
-    pub fn new() -> Self {
-        Self {
-            inner: HashMap::new(),
-        }
-    }
-
-    pub fn insert(&mut self, index: &CanonicalDigram, value: (usize, Address)) {
-        self.inner.entry(index.clone()).or_default().insert(value);
-    }
-
-    pub fn get_freq(&self) -> Freq {
-        let mut freq = Freq::new();
-        for (digram, occurrences) in &self.inner {
-            freq.insert(digram.clone(), occurrences.len());
-        }
-        freq
-    }
-}
-
+#[derive(Clone, Debug)]
 pub struct Freq {
-    most_frequent_index: usize,
-    inner: Vec<HashSet<CanonicalDigram>>,
+    inner: Vec<HashSet<CanonicalDigram, BuildHasherDefault<DefaultHasher>>>,
 }
 
 impl Freq {
     pub fn new() -> Self {
-        Self {
-            most_frequent_index: 0,
-            inner: Vec::new(),
+        Self { inner: Vec::new() }
+    }
+
+    pub fn change_frequency(
+        &mut self,
+        digram: &CanonicalDigram,
+        old_occurrence: usize,
+        new_occurrence: usize,
+    ) {
+        self.remove(digram, old_occurrence);
+        self.insert(digram.clone(), new_occurrence);
+    }
+
+    pub fn remove(&mut self, digram: &CanonicalDigram, number_of_occurrences: usize) {
+        self.inner
+            .get_mut(number_of_occurrences - 1)
+            .expect("Freq needs to contain digram at occurrences to remove it")
+            .remove(digram);
+        // If the last one is empty, remove empty sets till a non-empty one is the last
+        while self.inner.last().is_some_and(|set| set.is_empty()) {
+            self.inner.pop();
         }
     }
 
     pub fn insert(&mut self, digram: CanonicalDigram, number_of_occurrences: usize) {
-        if number_of_occurrences >= self.inner.len() {
-            let new_len = number_of_occurrences + 1;
-            self.inner.resize_with(new_len, Default::default);
-            self.most_frequent_index = number_of_occurrences;
+        if number_of_occurrences > self.inner.len() {
+            self.inner
+                .resize_with(number_of_occurrences, Default::default);
         }
-        self.inner[number_of_occurrences].insert(digram);
+        if number_of_occurrences == 0 {
+            return;
+        }
+        self.inner[number_of_occurrences - 1].insert(digram);
     }
 
-    pub fn get_most_freq(&mut self) -> CanonicalDigram {
-        let elt = self.inner[self.most_frequent_index]
-            .iter()
-            .next()
-            .cloned()
-            .unwrap();
-        let result = self.inner[self.most_frequent_index].take(&elt).unwrap();
-        if self.inner[self.most_frequent_index].is_empty() {
-            if self.most_frequent_index > 0 {
-                self.most_frequent_index -= 1;
-            }
-        }
-        result
+    pub fn get_most_freq(&self) -> Option<CanonicalDigram> {
+        let elt = self.inner.last()?.iter().next().cloned();
+        elt
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct NeighborList {
     inner: HashMap<(NodeId, usize, AddressNumber), (NodeId, AddressNumber)>,
 }
@@ -258,8 +346,88 @@ impl NeighborList {
         }
     }
 
+    pub fn get_value(
+        &self,
+        node: NodeId,
+        haplotype: usize,
+        address_number: AddressNumber,
+    ) -> Option<(NodeId, AddressNumber)> {
+        self.inner.get(&(node, haplotype, address_number)).cloned()
+    }
+
     pub fn insert(&mut self, key: (NodeId, usize, AddressNumber), value: (NodeId, AddressNumber)) {
-        self.inner.insert(key, value);
+        // Insert forward edge
+        self.inner.insert(key.clone(), value.clone());
+
+        // Insert reverse edge
+        let rev_key = (value.0.flip(), key.1, value.1);
+        let rev_value = (key.0.flip(), key.2);
+        self.inner.insert(rev_key, rev_value);
+    }
+
+    pub fn remove(&mut self, key: (NodeId, usize, AddressNumber), value: (NodeId, AddressNumber)) {
+        // Insert forward edge
+        self.inner.remove(&key);
+
+        // Insert reverse edge
+        let rev_key = (value.0.flip(), key.1, value.1);
+        self.inner.remove(&rev_key);
+    }
+
+    pub fn remove_occurrence(
+        &mut self,
+        digram: &CanonicalDigram,
+        occurrence: &Occurrence,
+        is_right_side: bool,
+    ) {
+        if is_right_side {
+            let key = (digram.get_u(), occurrence.0, occurrence.1.get_first());
+            let value = (digram.get_v(), occurrence.1.get_second());
+            self.remove(key, value);
+        } else {
+            let key = (digram.get_v(), occurrence.0, occurrence.1.get_second());
+            let value = (digram.get_u(), occurrence.1.get_first());
+            self.remove(key, value);
+        }
+    }
+
+    pub fn remove_occurrences(
+        &mut self,
+        digram: &CanonicalDigram,
+        occurrences: &HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
+        is_right_side: bool,
+    ) {
+        for occurrence in occurrences {
+            self.remove_occurrence(digram, occurrence, is_right_side);
+        }
+    }
+
+    pub fn insert_occurrence(
+        &mut self,
+        digram: &CanonicalDigram,
+        occurrence: Occurrence,
+        is_right_side: bool,
+    ) {
+        if is_right_side {
+            let key = (digram.get_u(), occurrence.0, occurrence.1.get_first());
+            let value = (digram.get_v(), occurrence.1.get_second());
+            self.insert(key, value);
+        } else {
+            let key = (digram.get_v(), occurrence.0, occurrence.1.get_second());
+            let value = (digram.get_u(), occurrence.1.get_first());
+            self.insert(key, value);
+        }
+    }
+
+    pub fn insert_values(
+        &mut self,
+        digram: &CanonicalDigram,
+        occurrences: Vec<Occurrence>,
+        is_right_side: bool,
+    ) {
+        for occurrence in occurrences {
+            self.insert_occurrence(digram, occurrence, is_right_side);
+        }
     }
 }
 
@@ -387,6 +555,7 @@ impl PathSegment {
         }
     }
 
+    #[allow(dead_code)]
     pub fn to_walk_string(&self) -> String {
         format!(
             "{}\t{}\t{}\t{}\t{}",
