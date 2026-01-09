@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use flate2::read::MultiGzDecoder;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::bytes::Regex;
 use std::{collections::HashMap, io::BufReader, str::FromStr};
@@ -64,38 +65,34 @@ fn bufreader_from_compressed(file: &PathBuf) -> Result<io::BufReader<Box<dyn Rea
 pub fn parse_file_to_haplotypes(
     file: &PathBuf,
     should_print_other_lines: bool,
-) -> Result<(Vec<Haplotype>, NodeRegistry, HashMap<usize, NodeId>)> {
+) -> Result<(Vec<Path>, NodeRegistry)> {
     let data = bufreader_from_compressed(file)?;
     let node_ids_by_name = parse_node_ids(data, false)?;
     let data = bufreader_from_compressed(file)?;
     parse_file_content_to_haplotypes(data, node_ids_by_name, should_print_other_lines)
 }
 
+type Path = (PathSegment, Vec<NodeId>);
+
 fn parse_file_content_to_haplotypes<R: Read>(
     reader: R,
     node_ids_by_name: NodeRegistry,
     should_print_other_lines: bool,
-) -> Result<(Vec<Haplotype>, NodeRegistry, HashMap<usize, NodeId>)> {
+) -> Result<(Vec<Path>, NodeRegistry)> {
     let line_reader = ByteLineReader::new(reader);
-    let mut counter = 0;
     let mut haplotypes = Vec::new();
-    let mut single_node_haplotypes = HashMap::new();
     line_reader.for_each(|line| {
-        let h = line_to_haplotype(&line, &node_ids_by_name);
-        if let Some((haplotype, first_node)) = h {
-            if haplotype.1.is_empty() {
-                single_node_haplotypes.insert(counter, first_node);
-            }
+        let h = path_to_haplotype(&line, &node_ids_by_name);
+        if let Some(haplotype) = h {
             haplotypes.push(haplotype);
-            counter += 1;
         } else if should_print_other_lines {
             print!("{}", str::from_utf8(&line).expect("Line is valid utf-8"));
         }
     });
-    Ok((haplotypes, node_ids_by_name, single_node_haplotypes))
+    Ok((haplotypes, node_ids_by_name))
 }
 
-fn line_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(Haplotype, NodeId)> {
+fn path_from_line(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<Path> {
     if line.is_empty() {
         return None;
     }
@@ -107,16 +104,16 @@ fn line_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(Ha
     }
 }
 
-fn path_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(Haplotype, NodeId)> {
+fn path_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(PathSegment, Vec<NodeId>)> {
     let (path_seg, buf_path_seg) = parse_path_identifier(line);
-    let (haplotype, first_node) = parse_path_seq(buf_path_seg, node_ids_by_name);
-    Some(((path_seg, haplotype), first_node))
+    let haplotype = parse_path_seq(buf_path_seg, node_ids_by_name);
+    Some((path_seg, haplotype))
 }
 
-fn walk_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(Haplotype, NodeId)> {
+fn walk_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(PathSegment, Vec<NodeId>)> {
     let (path_seg, buf_path_seg) = parse_walk_identifier(line);
-    let (haplotype, first_node) = parse_walk_seq(buf_path_seg, node_ids_by_name);
-    Some(((path_seg, haplotype), first_node))
+    let haplotype = parse_walk_seq(buf_path_seg, node_ids_by_name);
+    Some((path_seg, haplotype))
 }
 
 fn parse_node_ids<R: Read>(data: R, with_q: bool) -> Result<NodeRegistry> {
@@ -187,103 +184,39 @@ pub fn parse_walk_identifier(data: &[u8]) -> (PathSegment, &[u8]) {
     (path_seg, &data[i..])
 }
 
-fn parse_path_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> (Vec<LocalizedDigram>, NodeId) {
-    let mut haplotype = Vec::new();
-    let mut prev_counter = 0;
-    let mut nodes_visited_curr: HashSet<UndirectedNodeId> = HashSet::new();
-    let mut curr_counter = 0;
+fn parse_path_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> Vec<NodeId> {
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
         .unwrap();
 
-    let prev_node = data[..end]
+    let haplotype = data[..end]
         .split(|&x| x == b',')
-        .take(1)
-        .collect::<Vec<_>>()[0];
-    let prev_node = prev_node.trim_ascii();
-    let orientation = Orientation::from_path(prev_node[prev_node.len() - 1]);
-    let prev_node = node_ids_by_name.get_id(&prev_node[..prev_node.len() - 1]);
-
-    // Set the counter before setting the orientation to not take the orientation into account
-    let mut prev_node = NodeId::new(prev_node, orientation);
-
-    let first_node = prev_node;
-
-    nodes_visited_curr.insert(prev_node.get_undirected());
-    data[..end]
-        .split(|&x| x == b',')
-        .skip(1)
-        .for_each(|current_node| {
+        .map(|current_node| {
             let current_node = current_node.trim_ascii();
             let orientation = Orientation::from_path(current_node[current_node.len() - 1]);
             let current_node = node_ids_by_name.get_id(&current_node[..current_node.len() - 1]);
 
-            let current_node = NodeId::new(current_node, orientation);
-
-            prev_counter = curr_counter;
-            if nodes_visited_curr.contains(&current_node.get_undirected()) {
-                nodes_visited_curr.clear();
-            }
-            curr_counter += 1;
-            nodes_visited_curr.insert(current_node.get_undirected());
-
-            let digram = Digram::new(prev_node, current_node);
-            let address = Address::new(prev_counter, curr_counter);
-            let local_digram = LocalizedDigram::new(digram, address);
-            haplotype.push(local_digram);
-
-            prev_node = current_node;
-        });
+            NodeId::new(current_node, orientation)
+        }).collect_vec();
     log::debug!("parsing path sequences of size {} bytes..", end);
-    (haplotype, first_node)
+    haplotype
 }
 
-fn parse_walk_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> (Vec<LocalizedDigram>, NodeId) {
-    let mut haplotype = Vec::new();
-    let mut prev_counter = 0;
-    let mut nodes_visited_curr: HashSet<UndirectedNodeId> = HashSet::new();
-    let mut curr_counter = 0;
+fn parse_walk_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> Vec<NodeId> {
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
         .unwrap();
 
-    let prev_node = RE_WALK
-        .captures_iter(&data[..end])
-        .take(1)
-        .collect::<Vec<_>>();
-    let orientation = Orientation::from_walk(prev_node[0][1][0]);
-    let prev_node = node_ids_by_name.get_id(&prev_node[0][2]);
-
-    let mut prev_node = NodeId::new(prev_node, orientation);
-
-    let first_node = prev_node;
-
-    nodes_visited_curr.insert(prev_node.get_undirected());
-
-    RE_WALK.captures_iter(&data[..end]).skip(1).for_each(|m| {
+    let haplotype = RE_WALK.captures_iter(&data[..end]).map(|m| {
         let orientation = Orientation::from_walk(m[1][0]);
         let current_node = node_ids_by_name.get_id(&m[2]);
 
-        let current_node = NodeId::new(current_node, orientation);
-
-        prev_counter = curr_counter;
-        if nodes_visited_curr.contains(&current_node.get_undirected()) {
-            curr_counter += 1;
-            nodes_visited_curr.clear();
-        }
-        nodes_visited_curr.insert(current_node.get_undirected());
-
-        let digram = Digram::new(prev_node, current_node);
-        let address = Address::new(prev_counter, curr_counter);
-        let local_digram = LocalizedDigram::new(digram, address);
-        haplotype.push(local_digram);
-
-        prev_node = current_node;
-    });
+        NodeId::new(current_node, orientation)
+    }).collect_vec();
     log::debug!("parsing walk sequences of size {} bytes..", end);
-    (haplotype, first_node)
+    haplotype
 }
 
 #[cfg(test)]
@@ -366,16 +299,16 @@ mod tests {
     fn test_parse_path_seq() {
         let reg = get_node_registry();
         let path_seq = "S1+,S1+,S2-,S3+\n".bytes().collect_vec();
-        let (haplotype, _) = parse_path_seq(&path_seq, &reg);
-        assert_eq!(haplotype.len(), 3);
+        let haplotype = parse_path_seq(&path_seq, &reg);
+        assert_eq!(haplotype.len(), 4);
     }
 
     #[test]
     fn test_parse_walk_seq() {
         let reg = get_node_registry();
         let walk_seq = ">S1>S1<S2>S3\n".bytes().collect_vec();
-        let (haplotype, _) = parse_walk_seq(&walk_seq, &reg);
-        assert_eq!(haplotype.len(), 3);
+        let haplotype = parse_walk_seq(&walk_seq, &reg);
+        assert_eq!(haplotype.len(), 4);
     }
 
     #[test]
@@ -414,7 +347,7 @@ mod tests {
             "P\tA#0#ABC0.1:12-13\tS1+,S1+,S2-,S3+\nW\tA\t0\tABC0.1\t12\t13\t>S1>S1<S2>S3\n";
         let cursor = Cursor::new(test_data);
         let node_ids_by_name = get_node_registry();
-        let (haplotypes, _, _) = parse_file_content_to_haplotypes(cursor, node_ids_by_name, false)?;
+        let (haplotypes, _) = parse_file_content_to_haplotypes(cursor, node_ids_by_name, false)?;
         assert_eq!(haplotypes.len(), 2);
         Ok(())
     }

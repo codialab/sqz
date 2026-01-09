@@ -3,12 +3,12 @@ use clap::{Parser, Subcommand};
 use env_logger::Env;
 use helpers::{digram_occurrences::DigramOccurrences, utils::LocalizedDigram};
 use parser::parse_file_to_haplotypes;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
     encoding::get_haplotype_walks,
-    grammar_building::{build_grammar, Rule},
-    helpers::{PathSegment, ReverseNodeRegistry},
+    grammar_building::{Rule, build_grammar},
+    helpers::{PathSegment, ReverseNodeRegistry, utils::NodeId},
     printing::{print_grammar, print_walks},
 };
 
@@ -57,6 +57,22 @@ enum Commands {
     },
 }
 
+pub fn get_digrams(haplotypes: &[Vec<NodeId>]) -> (Vec<Vec<LocalizedDigram>>, HashMap<usize, NodeId>) {
+    let mut singleton_haplotypes = HashMap::new();
+    let mut digrams = vec![Vec::new(); haplotypes.len()];
+
+    for (path_idx, haplotype) in haplotypes.iter().enumerate() {
+        if haplotype.len() == 1 {
+            singleton_haplotypes.insert(path_idx, haplotype[0]);
+            continue;
+        }
+        let mut address_counter = 0;
+        for 
+    }
+
+    (digrams, singleton_haplotypes)
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let args = Cli::parse();
@@ -64,10 +80,11 @@ fn main() -> Result<()> {
     match args.command {
         Commands::Compress { file, prefix: _ } => {
             log::info!("Compressing file {:?}", file);
-            let (haplotypes, mut node_registry, singleton_haplotypes) =
+            let (haplotypes, mut node_registry) =
                 parse_file_to_haplotypes(&file, true)?;
-            let (haplotype_names, haplotypes): (Vec<PathSegment>, Vec<Vec<LocalizedDigram>>) =
+            let (haplotype_names, haplotypes): (Vec<PathSegment>, Vec<Vec<NodeId>>) =
                 haplotypes.into_iter().unzip();
+            let (digrams, singleton_haplotypes) = get_digrams(haplotypes);
             let number_of_paths = haplotypes.len();
             log::info!("Parsed {} haplotypes", number_of_paths);
             let mut d = DigramOccurrences::from(haplotypes);
