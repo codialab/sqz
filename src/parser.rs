@@ -108,13 +108,13 @@ fn line_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(Ha
 }
 
 fn path_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(Haplotype, NodeId)> {
-    let (path_seg, buf_path_seg) = parse_path_identifier(&line);
+    let (path_seg, buf_path_seg) = parse_path_identifier(line);
     let (haplotype, first_node) = parse_path_seq(buf_path_seg, node_ids_by_name);
     Some(((path_seg, haplotype), first_node))
 }
 
 fn walk_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(Haplotype, NodeId)> {
-    let (path_seg, buf_path_seg) = parse_walk_identifier(&line);
+    let (path_seg, buf_path_seg) = parse_walk_identifier(line);
     let (haplotype, first_node) = parse_walk_seq(buf_path_seg, node_ids_by_name);
     Some(((path_seg, haplotype), first_node))
 }
@@ -208,7 +208,7 @@ fn parse_path_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> (Vec<Localize
     // Set the counter before setting the orientation to not take the orientation into account
     let mut prev_node = NodeId::new(prev_node, orientation);
 
-    let first_node = prev_node.clone();
+    let first_node = prev_node;
 
     nodes_visited_curr.insert(prev_node.get_undirected());
     data[..end]
@@ -258,7 +258,7 @@ fn parse_walk_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> (Vec<Localize
 
     let mut prev_node = NodeId::new(prev_node, orientation);
 
-    let first_node = prev_node.clone();
+    let first_node = prev_node;
 
     nodes_visited_curr.insert(prev_node.get_undirected());
 

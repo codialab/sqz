@@ -37,7 +37,7 @@ impl DigramOccurrences {
         for (i, haplotype) in haplotypes.into_iter().enumerate() {
             for local_digram in haplotype {
                 let (digram, address) = local_digram.split_to_canonical();
-                d.insert(&digram, Occurrence::new(i, address.clone()));
+                d.insert(&digram, Occurrence::new(i, address));
                 d.neighbor_right.insert(
                     (digram.get_u(), i, address.get_first()),
                     (digram.get_v(), address.get_second()),

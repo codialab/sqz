@@ -3,11 +3,7 @@ use crate::{
     Rule,
 };
 
-pub fn print_grammar(
-    grammar: &Vec<Rule>,
-    node_registry: &ReverseNodeRegistry,
-    print_addresses: bool,
-) {
+pub fn print_grammar(grammar: &[Rule], node_registry: &ReverseNodeRegistry, print_addresses: bool) {
     for rule in grammar {
         if !print_addresses {
             println!(
@@ -29,15 +25,15 @@ pub fn print_grammar(
 }
 
 pub fn print_walks(
-    walks: &Vec<Vec<NodeId>>,
+    walks: &[Vec<NodeId>],
     node_registry: &ReverseNodeRegistry,
-    haplotype_names: &Vec<PathSegment>,
+    haplotype_names: &[PathSegment],
 ) {
     for (walk, haplotype_name) in walks.iter().zip(haplotype_names.iter()) {
         print!("W\t{}\t", haplotype_name);
         for node in walk {
             print!("{}", node_registry.get_directed_name(*node));
         }
-        println!("");
+        println!();
     }
 }

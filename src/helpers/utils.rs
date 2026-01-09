@@ -9,16 +9,16 @@ pub struct Address(pub AddressNumber, pub AddressNumber);
 impl Ord for Address {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.0 <= self.1 {
-            return (self.0, self.1).cmp(&(other.0, other.1));
+            (self.0, self.1).cmp(&(other.0, other.1))
         } else {
-            return (other.1, other.0).cmp(&(self.1, self.0));
+            (other.1, other.0).cmp(&(self.1, self.0))
         }
     }
 }
 
 impl PartialOrd for Address {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(other))
     }
 }
 
@@ -170,11 +170,7 @@ impl Digram {
         if self.0 > self.1 {
             false
         } else if self.0.same_node(&self.1) {
-            if self.0 .1 == Orientation::Backward {
-                false
-            } else {
-                true
-            }
+            self.0 .1 != Orientation::Backward
         } else {
             true
         }
@@ -201,9 +197,9 @@ impl From<Digram> for CanonicalDigram {
     }
 }
 
-impl Into<Digram> for CanonicalDigram {
-    fn into(self) -> Digram {
-        Digram(self.0, self.1)
+impl From<CanonicalDigram> for Digram {
+    fn from(val: CanonicalDigram) -> Self {
+        Digram(val.0, val.1)
     }
 }
 
@@ -225,11 +221,7 @@ impl LocalizedDigram {
 
     #[allow(dead_code)]
     pub fn is_canonical(&self) -> bool {
-        if self.0.is_canonical() {
-            true
-        } else {
-            false
-        }
+        self.0.is_canonical()
     }
 
     pub fn split_to_canonical(self) -> (CanonicalDigram, Address) {

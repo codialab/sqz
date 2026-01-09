@@ -37,17 +37,17 @@ impl ReverseNodeRegistry {
             Orientation::Backward => '<',
         };
         if let Some(node_name) = self.inner.get(&node.0) {
-            return format!("{}{}", o, str::from_utf8(node_name).unwrap());
+            format!("{}{}", o, str::from_utf8(node_name).unwrap())
         } else {
-            return format!("{}@{}", o, node.0 .0);
+            format!("{}@{}", o, node.0 .0)
         }
     }
 
     pub fn get_name(&self, node: UndirectedNodeId) -> String {
         if let Some(node_name) = self.inner.get(&node) {
-            return format!("{}", str::from_utf8(node_name).unwrap());
+            str::from_utf8(node_name).unwrap().to_string()
         } else {
-            return format!("@{}", node.0);
+            format!("@{}", node.0)
         }
     }
 }
@@ -116,7 +116,7 @@ impl NodeRegistry {
             self.get_id(&name)
         } else {
             self.get_inserted(name.clone())
-                .expect(&format!("{:?}: {:?}", name, self.inner))
+                .unwrap_or_else(|| panic!("{:?}: {:?}", name, self.inner))
         }
     }
 
@@ -131,15 +131,15 @@ impl NodeRegistry {
             .get_inserted_meta_node(new_name)
             .expect("Meta node name should be unique");
         self.meta_node_number += 1;
-        let new_node_id = NodeId::new(new_node_id, Orientation::Forward);
-        new_node_id
+
+        NodeId::new(new_node_id, Orientation::Forward)
     }
 }
 
-impl Into<ReverseNodeRegistry> for NodeRegistry {
-    fn into(self) -> ReverseNodeRegistry {
+impl From<NodeRegistry> for ReverseNodeRegistry {
+    fn from(val: NodeRegistry) -> Self {
         ReverseNodeRegistry {
-            inner: self.inner.into_iter().map(|(k, v)| (v, k)).collect(),
+            inner: val.inner.into_iter().map(|(k, v)| (v, k)).collect(),
         }
     }
 }
@@ -357,7 +357,7 @@ impl NeighborList {
 
     pub fn insert(&mut self, key: (NodeId, usize, AddressNumber), value: (NodeId, AddressNumber)) {
         // Insert forward edge
-        self.inner.insert(key.clone(), value.clone());
+        self.inner.insert(key, value);
 
         // Insert reverse edge
         let rev_key = (value.0.flip(), key.1, value.1);
