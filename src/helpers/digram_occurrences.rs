@@ -1,13 +1,12 @@
-use std::{collections::{HashMap, hash_map::Iter, HashSet}, hash::{BuildHasherDefault, DefaultHasher}};
+use std::{collections::{hash_map::Iter, HashSet}, hash::{BuildHasherDefault, DefaultHasher}};
 
-use crate::helpers::{AddressNumber, CanonicalDigram, Freq, Haplotype, NeighborList, NodeId, Occurrence};
+use crate::helpers::{AddressNumber, CanonicalDigram, DeterministicHashMap, DeterministicHashSet, Freq, NeighborList, NodeId, Occurrence, utils::LocalizedDigram};
 
-type DeterministicHashSet<T> = HashSet<T, BuildHasherDefault<DefaultHasher>>;
 
 
 #[derive(Clone, Debug)]
 pub struct DigramOccurrences {
-    inner: HashMap<CanonicalDigram, DeterministicHashSet<Occurrence>>,
+    inner: DeterministicHashMap<CanonicalDigram, DeterministicHashSet<Occurrence>>,
     neighbor_left: NeighborList,
     neighbor_right: NeighborList,
     freq: Freq,
@@ -16,7 +15,7 @@ pub struct DigramOccurrences {
 impl DigramOccurrences {
     pub fn new() -> Self {
         Self {
-            inner: HashMap::new(),
+            inner: DeterministicHashMap::default(),
             neighbor_left: NeighborList::new(),
             neighbor_right: NeighborList::new(),
             freq: Freq::new(),
@@ -28,7 +27,7 @@ impl DigramOccurrences {
         self.inner.contains_key(k)
     }
 
-    pub fn from(haplotypes: Vec<Haplotype>) -> Self {
+    pub fn from(haplotypes: Vec<Vec<LocalizedDigram>>) -> Self {
         let mut d = Self::new();
 
         for (i, haplotype) in haplotypes.into_iter().enumerate() {

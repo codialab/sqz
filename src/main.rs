@@ -12,7 +12,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::helpers::ReverseNodeRegistry;
+use crate::helpers::{PathSegment, ReverseNodeRegistry};
 
 mod helpers;
 mod parser;
@@ -71,46 +71,7 @@ fn get_canonized(
     (digram, occurrence)
 }
 
-type AnchorInfo = (NodeId, usize, NodeId, usize, usize);
-
-fn get_l(rules: &Vec<Rule>) -> HashMap<NodeId, AnchorInfo> {
-    let mut l = HashMap::new();
-    for &(q, ref left, ref right, _) in rules {
-
-        let get_child_anchors = |child: &NodeId| -> Option<((NodeId, usize), (NodeId, usize), usize)> {
-            if !child.is_meta_node() {
-                return None;
-            }
-            let data = l.get(&child.get_forward()).expect("Sorting of rules to be correct");
-            let (l_anchor, l_offset, r_anchor, r_offset, size) = *data;
-            if child.is_forward() {
-                Some(((l_anchor, l_offset), (r_anchor, r_offset), size))
-            } else {
-                Some(((r_anchor, r_offset), (l_anchor, l_offset), size))
-            }
-        };
-
-        let m1 = get_child_anchors(left);
-        let m2 = get_child_anchors(right);
-        let size = m1.map_or(1, |x| x.2) + m2.map_or(1, |x| x.2);
-
-        let (left_anchor, left_offset) = match (m1, m2) {
-            (Some((start, _ , _)), _) => start,
-            (None, Some((start, _, _))) => (start.0, start.1 + 1),
-            (None, None) => (q, 0),
-        };
-
-        let (right_anchor, right_offset) = match (m1, m2) {
-            (_, Some((_, end, _))) => end,
-            (Some((_, end, _)), None) => (end.0, end.1 + 1),
-            (None, None) => (q, 0),
-        };
-        l.insert(q, (left_anchor, left_offset, right_anchor, right_offset, size));
-    }
-    l
-}
-
-fn get_haplotype_walks(d: &DigramOccurrences, rules: &Vec<Rule>, number_of_paths: usize) -> Vec<Vec<NodeId>> {
+fn get_haplotype_walks(d: &DigramOccurrences, rules: &Vec<Rule>, singleton_haplotypes: &HashMap<usize, NodeId>, number_of_paths: usize) -> Vec<Vec<NodeId>> {
     let mut walks: Vec<Vec<(Digram, Address)>> = vec![Vec::new(); number_of_paths];
 
     // Find all singleton digrams
@@ -139,21 +100,34 @@ fn get_haplotype_walks(d: &DigramOccurrences, rules: &Vec<Rule>, number_of_paths
 
     // Insert all walks that only consist of a single node
     let single_node_walks = walks.iter().enumerate().filter_map(|(idx, walk)| if walk.is_empty() { Some(idx) } else { None }).collect_vec();
+    log::info!("SNW: {:?}", single_node_walks);
     for single_node_walk in single_node_walks {
-        println!(" === SNW: {} ===", single_node_walk);
-        for rule in rules {
-            for occurrence in &rule.3 {
-                if occurrence.get_haplotype() == single_node_walk {
-                    if occurrence.get_address().is_forward() {
-                        walks[single_node_walk].push(rule.0);
-                    } else {
-                        walks[single_node_walk].push(rule.0.flip());
-                    }
-                }
+        if singleton_haplotypes.contains_key(&single_node_walk) {
+            walks[single_node_walk].push(singleton_haplotypes[&single_node_walk]);
+        } else {
+            if let Some(meta_node) = get_single_meta_node_walk(single_node_walk, rules) {
+                walks[single_node_walk].push(meta_node);
+            } else {
+                log::error!("Was not able to assign a sequence to walk No. {}", single_node_walk);
             }
         }
     }
     walks
+}
+
+fn get_single_meta_node_walk(single_node_walk: usize, rules: &Vec<Rule>) -> Option<NodeId> {
+    for rule in rules.iter().rev() {
+        for occurrence in &rule.3 {
+            if occurrence.get_haplotype() == single_node_walk {
+                if occurrence.get_address().is_forward() {
+                    return Some(rule.0);
+                } else {
+                    return Some(rule.0.flip());
+                }
+            }
+        }
+    }
+    None
 }
 
 fn build_rule(
@@ -251,9 +225,9 @@ fn print_grammar(grammar: &Vec<Rule>, node_registry: &ReverseNodeRegistry, print
     } 
 }
 
-fn print_walks(walks: &Vec<Vec<NodeId>>, node_registry: &ReverseNodeRegistry) {
-    for walk in walks {
-        print!("W\t");
+fn print_walks(walks: &Vec<Vec<NodeId>>, node_registry: &ReverseNodeRegistry, haplotype_names: &Vec<PathSegment>) {
+    for (walk, haplotype_name) in walks.iter().zip(haplotype_names.iter()) {
+        print!("W\t{}\t", haplotype_name);
         for node in walk {
             print!("{}", node_registry.get_directed_name(*node));
         }
@@ -268,16 +242,19 @@ fn main() -> Result<()> {
     match args.command {
         Commands::Compress { file, prefix: _ } => {
             log::info!("Compressing file {:?}", file);
-            let (haplotypes, mut node_registry) = parse_file_to_haplotypes(&file)?;
+            let (haplotypes, mut node_registry, singleton_haplotypes) = parse_file_to_haplotypes(&file, true)?;
+            let (haplotype_names, haplotypes): (Vec<PathSegment>, Vec<Vec<LocalizedDigram>>) = haplotypes.into_iter().unzip(); 
             let number_of_paths = haplotypes.len();
             log::info!("Parsed {} haplotypes", number_of_paths);
-            let mut singleton_haplotypes = get_singleton_haplotypes(&haplotypes);
             let mut d = DigramOccurrences::from(haplotypes);
             let grammar = build_grammar(&mut d, &mut node_registry);
             let rev_reg: ReverseNodeRegistry = node_registry.into();
+            for (digram, occurrences) in &d {
+                log::info!("| {}{} -> {:?}", rev_reg.get_directed_name(digram.0), rev_reg.get_directed_name(digram.1), occurrences);
+            }
             print_grammar(&grammar, &rev_reg, true);
-            let haplotype_walks = get_haplotype_walks(&d, &grammar, number_of_paths);
-            print_walks(&haplotype_walks, &rev_reg);
+            let haplotype_walks = get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
+            print_walks(&haplotype_walks, &rev_reg, &haplotype_names);
         }
         Commands::Decompress { file, use_p_lines: _ } => {
             log::info!("Decompressing file {}", file);

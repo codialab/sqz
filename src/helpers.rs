@@ -16,15 +16,16 @@ use crate::helpers::utils::{Address, AddressNumber, CanonicalDigram, LocalizedDi
 pub mod digram_occurrences;
 pub mod utils;
 
+pub type DeterministicHashSet<T> = HashSet<T, BuildHasherDefault<DefaultHasher>>;
+pub type DeterministicHashMap<T, U> = HashMap<T, U, BuildHasherDefault<DefaultHasher>>;
+
 static PATHID_PANSN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^([^#]+)(#[^#]+)?(#[^#].*)?$").unwrap());
 static PATHID_COORDS: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):([0-9]+)-([0-9]+)$").unwrap());
 
 #[derive(Debug)]
 pub struct ReverseNodeRegistry {
-    inner: HashMap<UndirectedNodeId, Vec<u8>>,
-    prefix: Vec<u8>,
-    meta_node_number: u32,
+    inner: DeterministicHashMap<UndirectedNodeId, Vec<u8>>,
 }
 
 impl ReverseNodeRegistry {
@@ -52,7 +53,7 @@ impl ReverseNodeRegistry {
 
 #[derive(Debug)]
 pub struct NodeRegistry {
-    inner: HashMap<Vec<u8>, UndirectedNodeId>,
+    inner: DeterministicHashMap<Vec<u8>, UndirectedNodeId>,
     prefix: Vec<u8>,
     meta_node_number: u32,
 }
@@ -60,14 +61,14 @@ pub struct NodeRegistry {
 impl NodeRegistry {
     pub fn new() -> Self {
         Self {
-            inner: HashMap::new(),
+            inner: DeterministicHashMap::default(),
             prefix: vec![b'@'],
             meta_node_number: 1,
         }
     }
 
     #[allow(dead_code)]
-    pub fn from(h: HashMap<Vec<u8>, UndirectedNodeId>) -> Self {
+    pub fn from(h: DeterministicHashMap<Vec<u8>, UndirectedNodeId>) -> Self {
         Self {
             inner: h,
             prefix: vec![b'@'],
@@ -82,7 +83,7 @@ impl NodeRegistry {
     #[allow(dead_code)]
     pub fn with_prefix(prefix: Vec<u8>) -> Self {
         Self {
-            inner: HashMap::new(),
+            inner: DeterministicHashMap::default(),
             prefix,
             meta_node_number: 1,
         }
@@ -138,8 +139,6 @@ impl Into<ReverseNodeRegistry> for NodeRegistry {
     fn into(self) -> ReverseNodeRegistry {
         ReverseNodeRegistry {
             inner: self.inner.into_iter().map(|(k, v)| (v, k)).collect(),
-            prefix: self.prefix,
-            meta_node_number: self.meta_node_number,
         }
     }
 }
@@ -284,11 +283,11 @@ impl Occurrence {
     }
 }
 
-pub type Haplotype = Vec<LocalizedDigram>;
+pub type Haplotype = (PathSegment, Vec<LocalizedDigram>);
 
 #[derive(Clone, Debug)]
 pub struct Freq {
-    inner: Vec<HashSet<CanonicalDigram, BuildHasherDefault<DefaultHasher>>>,
+    inner: Vec<DeterministicHashSet<CanonicalDigram>>,
 }
 
 impl Freq {
@@ -521,6 +520,7 @@ impl PathSegment {
         segment
     }
 
+    #[allow(dead_code)]
     pub fn id(&self) -> String {
         if self.haplotype.is_some() {
             format!(
@@ -567,6 +567,7 @@ impl PathSegment {
         )
     }
 
+    #[allow(dead_code)]
     pub fn coords(&self) -> Option<(usize, usize)> {
         if self.start.is_some() && self.end.is_some() {
             Some((self.start.unwrap(), self.end.unwrap()))
@@ -578,11 +579,7 @@ impl PathSegment {
 
 impl fmt::Display for PathSegment {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        if let Some((start, end)) = self.coords() {
-            write!(formatter, "{}:{}-{}", self.id(), start, end)?;
-        } else {
-            write!(formatter, "{}", self.id())?;
-        }
+        write!(formatter, "{}", self.to_walk_string())?;
         Ok(())
     }
 }
