@@ -1,8 +1,12 @@
-use std::{collections::{hash_map::Iter, HashSet}, hash::{BuildHasherDefault, DefaultHasher}};
+use std::{
+    collections::{hash_map::Iter, HashSet},
+    hash::{BuildHasherDefault, DefaultHasher},
+};
 
-use crate::helpers::{AddressNumber, CanonicalDigram, DeterministicHashMap, DeterministicHashSet, Freq, NeighborList, NodeId, Occurrence, utils::LocalizedDigram};
-
-
+use crate::helpers::{
+    utils::LocalizedDigram, AddressNumber, CanonicalDigram, DeterministicHashMap,
+    DeterministicHashSet, Freq, NeighborList, NodeId, Occurrence,
+};
 
 #[derive(Clone, Debug)]
 pub struct DigramOccurrences {
@@ -168,12 +172,12 @@ impl DigramOccurrences {
 }
 
 pub struct DigramOccurrencesRefIter<'a> {
-    iter: Iter<'a, CanonicalDigram, DeterministicHashSet<Occurrence>>
+    iter: Iter<'a, CanonicalDigram, DeterministicHashSet<Occurrence>>,
 }
 
 impl<'a> Iterator for DigramOccurrencesRefIter<'a> {
     // HashMap iterators yield a tuple: (&Key, &Value)
-    type Item = (&'a CanonicalDigram, &'a DeterministicHashSet<Occurrence>); 
+    type Item = (&'a CanonicalDigram, &'a DeterministicHashSet<Occurrence>);
 
     fn next(&mut self) -> Option<Self::Item> {
         // We simply delegate the work to the inner iterator!
@@ -182,12 +186,12 @@ impl<'a> Iterator for DigramOccurrencesRefIter<'a> {
 }
 
 impl<'a> IntoIterator for &'a DigramOccurrences {
-    type Item = (&'a CanonicalDigram, &'a DeterministicHashSet<Occurrence>); 
+    type Item = (&'a CanonicalDigram, &'a DeterministicHashSet<Occurrence>);
     type IntoIter = DigramOccurrencesRefIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         DigramOccurrencesRefIter {
-            iter: self.inner.iter()
+            iter: self.inner.iter(),
         }
     }
 }
@@ -203,23 +207,35 @@ mod tests {
     }
 
     fn get_digram() -> Digram {
-        Digram(NodeId(UndirectedNodeId::new(1), Orientation::Forward), NodeId(UndirectedNodeId::new(2), Orientation::Forward))
+        Digram(
+            NodeId(UndirectedNodeId::new(1), Orientation::Forward),
+            NodeId(UndirectedNodeId::new(2), Orientation::Forward),
+        )
     }
 
     fn get_doc() -> DigramOccurrences {
-        let doc = DigramOccurrences::from(vec![vec![LocalizedDigram(get_digram(), Address(AddressNumber(0), AddressNumber(1)))]]);
+        let doc = DigramOccurrences::from(vec![vec![LocalizedDigram(
+            get_digram(),
+            Address(AddressNumber(0), AddressNumber(1)),
+        )]]);
         doc
     }
 
     fn get_digram_from(a: u32, b: u32) -> Digram {
-        Digram(NodeId(UndirectedNodeId::new(a), Orientation::Forward), NodeId(UndirectedNodeId::new(b), Orientation::Forward))
+        Digram(
+            NodeId(UndirectedNodeId::new(a), Orientation::Forward),
+            NodeId(UndirectedNodeId::new(b), Orientation::Forward),
+        )
     }
 
     #[test]
     fn test_insert() {
         let mut doc = DigramOccurrences::new();
         assert_eq!(doc.inner.len(), 0);
-        doc.insert(&get_canonical_digram(), Occurrence(0, Address(AddressNumber(0), AddressNumber(1))));
+        doc.insert(
+            &get_canonical_digram(),
+            Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
+        );
         assert_eq!(doc.inner.len(), 1);
         assert_eq!(doc.neighbor_left.inner.len(), 0);
         assert_eq!(doc.neighbor_right.inner.len(), 0);
@@ -230,13 +246,19 @@ mod tests {
     fn test_contains() {
         let mut doc = DigramOccurrences::new();
         assert!(!doc.contains(&get_canonical_digram()));
-        doc.insert(&get_canonical_digram(), Occurrence(0, Address(AddressNumber(0), AddressNumber(1))));
+        doc.insert(
+            &get_canonical_digram(),
+            Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
+        );
         assert!(doc.contains(&get_canonical_digram()));
     }
 
     #[test]
     fn test_from() {
-        let doc = DigramOccurrences::from(vec![vec![LocalizedDigram(get_digram(), Address(AddressNumber(0), AddressNumber(1)))]]);
+        let doc = DigramOccurrences::from(vec![vec![LocalizedDigram(
+            get_digram(),
+            Address(AddressNumber(0), AddressNumber(1)),
+        )]]);
         assert_eq!(doc.inner.len(), 1);
         assert_eq!(doc.neighbor_left.inner.len(), 2);
         assert_eq!(doc.neighbor_right.inner.len(), 2);
@@ -256,7 +278,10 @@ mod tests {
     #[test]
     fn test_delete_occurrence() {
         let mut doc = get_doc();
-        doc.delete_occurrence(&get_canonical_digram(), &Occurrence(0, Address(AddressNumber(0), AddressNumber(1))));
+        doc.delete_occurrence(
+            &get_canonical_digram(),
+            &Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
+        );
         assert_eq!(doc.inner.len(), 0);
         assert_eq!(doc.neighbor_left.inner.len(), 0);
         assert_eq!(doc.neighbor_right.inner.len(), 0);
@@ -278,7 +303,10 @@ mod tests {
     #[test]
     fn test_add_occurrence() {
         let mut doc = DigramOccurrences::new();
-        doc.add_occurrence(&get_canonical_digram(), Occurrence(0, Address(AddressNumber(0), AddressNumber(1))));
+        doc.add_occurrence(
+            &get_canonical_digram(),
+            Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
+        );
         assert_eq!(doc.inner.len(), 1);
         assert_eq!(doc.neighbor_left.inner.len(), 2);
         assert_eq!(doc.neighbor_right.inner.len(), 2);
@@ -288,22 +316,40 @@ mod tests {
     #[test]
     fn test_get_left_neighbor() {
         let mut doc = get_doc();
-        doc.add_occurrence(&get_digram_from(0, 1).into(), Occurrence(0, Address(AddressNumber(0), AddressNumber(0))));
-        let ln = doc.get_left_neighbor(&get_canonical_digram(), &Occurrence(0, Address(AddressNumber(0), AddressNumber(1))));
+        doc.add_occurrence(
+            &get_digram_from(0, 1).into(),
+            Occurrence(0, Address(AddressNumber(0), AddressNumber(0))),
+        );
+        let ln = doc.get_left_neighbor(
+            &get_canonical_digram(),
+            &Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
+        );
         assert!(ln.is_some());
         let (node_id, address_number) = ln.unwrap();
-        assert_eq!(node_id, NodeId(UndirectedNodeId::new(0), Orientation::Forward));
+        assert_eq!(
+            node_id,
+            NodeId(UndirectedNodeId::new(0), Orientation::Forward)
+        );
         assert_eq!(address_number, AddressNumber(0));
     }
 
     #[test]
     fn test_get_right_neighbor() {
         let mut doc = get_doc();
-        doc.add_occurrence(&get_digram_from(2, 3).into(), Occurrence(0, Address(AddressNumber(1), AddressNumber(1))));
-        let ln = doc.get_right_neighbor(&get_canonical_digram(), &Occurrence(0, Address(AddressNumber(0), AddressNumber(1))));
+        doc.add_occurrence(
+            &get_digram_from(2, 3).into(),
+            Occurrence(0, Address(AddressNumber(1), AddressNumber(1))),
+        );
+        let ln = doc.get_right_neighbor(
+            &get_canonical_digram(),
+            &Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
+        );
         assert!(ln.is_some());
         let (node_id, address_number) = ln.unwrap();
-        assert_eq!(node_id, NodeId(UndirectedNodeId::new(3), Orientation::Forward));
+        assert_eq!(
+            node_id,
+            NodeId(UndirectedNodeId::new(3), Orientation::Forward)
+        );
         assert_eq!(address_number, AddressNumber(1));
     }
 

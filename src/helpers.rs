@@ -11,7 +11,9 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use crate::helpers::utils::{Address, AddressNumber, CanonicalDigram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId};
+use crate::helpers::utils::{
+    Address, AddressNumber, CanonicalDigram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId,
+};
 
 pub mod digram_occurrences;
 pub mod utils;
@@ -37,7 +39,7 @@ impl ReverseNodeRegistry {
         if let Some(node_name) = self.inner.get(&node.0) {
             return format!("{}{}", o, str::from_utf8(node_name).unwrap());
         } else {
-            return format!("{}@{}", o, node.0.0);
+            return format!("{}@{}", o, node.0 .0);
         }
     }
 
@@ -49,7 +51,6 @@ impl ReverseNodeRegistry {
         }
     }
 }
-
 
 #[derive(Debug)]
 pub struct NodeRegistry {
@@ -215,7 +216,7 @@ impl Occurrence {
                 uv.push(first.clone());
                 if let Some(second) = chunk.next() {
                     println!("{:?} | {:?}", first, second);
-                    let replace = Self(second.0, Address(first.1.0, second.1.1));
+                    let replace = Self(second.0, Address(first.1 .0, second.1 .1));
                     qq.push(replace);
                 }
             }

@@ -136,7 +136,7 @@ impl NodeId {
     }
 
     pub fn is_meta_node(&self) -> bool {
-        self.0.1
+        self.0 .1
     }
 }
 
@@ -152,7 +152,7 @@ impl Digram {
         if self.0 > self.1 {
             Self(self.1.flip(), self.0.flip())
         } else if self.0.same_node(&self.1) {
-            if self.0.1 == Orientation::Backward {
+            if self.0 .1 == Orientation::Backward {
                 Self(self.1.flip(), self.0.flip())
             } else {
                 self.clone()
@@ -170,7 +170,7 @@ impl Digram {
         if self.0 > self.1 {
             false
         } else if self.0.same_node(&self.1) {
-            if self.0.1 == Orientation::Backward {
+            if self.0 .1 == Orientation::Backward {
                 false
             } else {
                 true
@@ -258,6 +258,12 @@ mod tests {
         let b = NodeId::new(UndirectedNodeId::new(1), Orientation::Forward);
         let digram = Digram(a, b);
         let canonical = digram.canonize();
-        assert_eq!(canonical, Digram(NodeId(UndirectedNodeId::new(1), Orientation::Backward), NodeId(UndirectedNodeId::new(2), Orientation::Backward)))
+        assert_eq!(
+            canonical,
+            Digram(
+                NodeId(UndirectedNodeId::new(1), Orientation::Backward),
+                NodeId(UndirectedNodeId::new(2), Orientation::Backward)
+            )
+        )
     }
 }

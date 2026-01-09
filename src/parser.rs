@@ -5,11 +5,11 @@ use regex::bytes::Regex;
 use std::{collections::HashMap, io::BufReader, str::FromStr};
 
 use crate::helpers::{
-    utils::Address, utils::Digram, Haplotype, utils::LocalizedDigram, utils::NodeId, NodeRegistry, utils::Orientation, PathSegment,
-    utils::UndirectedNodeId,
+    utils::Address, utils::Digram, utils::LocalizedDigram, utils::NodeId, utils::Orientation,
+    utils::UndirectedNodeId, Haplotype, NodeRegistry, PathSegment,
 };
 use std::{
-    collections::{HashSet},
+    collections::HashSet,
     io::{self, BufRead, Read},
     path::PathBuf,
 };
@@ -24,7 +24,9 @@ struct ByteLineReader<R: io::Read> {
 
 impl<R: io::Read> ByteLineReader<R> {
     fn new(data: R) -> Self {
-        Self { data: BufReader::new(data) }
+        Self {
+            data: BufReader::new(data),
+        }
     }
 }
 
@@ -59,31 +61,37 @@ fn bufreader_from_compressed(file: &PathBuf) -> Result<io::BufReader<Box<dyn Rea
     }
 }
 
-pub fn parse_file_to_haplotypes(file: &PathBuf, should_print_other_lines: bool) -> Result<(Vec<Haplotype>, NodeRegistry, HashMap<usize, NodeId>)> {
+pub fn parse_file_to_haplotypes(
+    file: &PathBuf,
+    should_print_other_lines: bool,
+) -> Result<(Vec<Haplotype>, NodeRegistry, HashMap<usize, NodeId>)> {
     let data = bufreader_from_compressed(file)?;
     let node_ids_by_name = parse_node_ids(data, false)?;
     let data = bufreader_from_compressed(file)?;
     parse_file_content_to_haplotypes(data, node_ids_by_name, should_print_other_lines)
 }
 
-fn parse_file_content_to_haplotypes<R: Read>(reader: R, node_ids_by_name: NodeRegistry, should_print_other_lines: bool) -> Result<(Vec<Haplotype>, NodeRegistry, HashMap<usize, NodeId>)> {
+fn parse_file_content_to_haplotypes<R: Read>(
+    reader: R,
+    node_ids_by_name: NodeRegistry,
+    should_print_other_lines: bool,
+) -> Result<(Vec<Haplotype>, NodeRegistry, HashMap<usize, NodeId>)> {
     let line_reader = ByteLineReader::new(reader);
     let mut counter = 0;
     let mut haplotypes = Vec::new();
     let mut single_node_haplotypes = HashMap::new();
-    line_reader
-        .for_each(|line| { 
-            let h = line_to_haplotype(&line, &node_ids_by_name);
-            if let Some((haplotype, first_node)) = h {
-                if haplotype.1.is_empty() {
-                    single_node_haplotypes.insert(counter, first_node);
-                }
-                haplotypes.push(haplotype);
-                counter += 1;
-            } else if should_print_other_lines {
-                print!("{}", str::from_utf8(&line).expect("Line is valid utf-8"));
+    line_reader.for_each(|line| {
+        let h = line_to_haplotype(&line, &node_ids_by_name);
+        if let Some((haplotype, first_node)) = h {
+            if haplotype.1.is_empty() {
+                single_node_haplotypes.insert(counter, first_node);
             }
-        } );
+            haplotypes.push(haplotype);
+            counter += 1;
+        } else if should_print_other_lines {
+            print!("{}", str::from_utf8(&line).expect("Line is valid utf-8"));
+        }
+    });
     Ok((haplotypes, node_ids_by_name, single_node_haplotypes))
 }
 
@@ -279,7 +287,10 @@ fn parse_walk_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> (Vec<Localize
 }
 
 #[cfg(test)]
-pub fn get_haplotype_from_walk_string(text: &str, node_registry: &mut NodeRegistry) -> Vec<LocalizedDigram> {
+pub fn get_haplotype_from_walk_string(
+    text: &str,
+    node_registry: &mut NodeRegistry,
+) -> Vec<LocalizedDigram> {
     let data = text.as_bytes();
     let mut haplotype = Vec::new();
     let mut prev_counter = 0;
@@ -343,7 +354,6 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-
     fn get_node_registry() -> NodeRegistry {
         let mut dhm = DeterministicHashMap::default();
         dhm.insert("S1".bytes().collect_vec(), UndirectedNodeId::new(1));
@@ -372,7 +382,13 @@ mod tests {
     fn test_parse_path_identifier() {
         let data = "P\tA#0#ABC0.1:12-13\t12345".bytes().collect_vec();
         let (path_seg, remaining_data) = parse_path_identifier(&data);
-        let expected = PathSegment::new("A".to_string(), "0".to_string(), "ABC0.1".to_string(), Some(12), Some(13));
+        let expected = PathSegment::new(
+            "A".to_string(),
+            "0".to_string(),
+            "ABC0.1".to_string(),
+            Some(12),
+            Some(13),
+        );
         assert_eq!(path_seg, expected);
         assert_eq!(remaining_data.len(), 5);
     }
@@ -381,14 +397,21 @@ mod tests {
     fn test_parse_walk_identifier() {
         let data = "W\tA\t0\tABC0.1\t12\t13\t12345".bytes().collect_vec();
         let (path_seg, remaining_data) = parse_walk_identifier(&data);
-        let expected = PathSegment::new("A".to_string(), "0".to_string(), "ABC0.1".to_string(), Some(12), Some(13));
+        let expected = PathSegment::new(
+            "A".to_string(),
+            "0".to_string(),
+            "ABC0.1".to_string(),
+            Some(12),
+            Some(13),
+        );
         assert_eq!(path_seg, expected);
         assert_eq!(remaining_data.len(), 5);
     }
 
     #[test]
     fn test_parse_file_content_to_haplotypes() -> anyhow::Result<()> {
-        let test_data = "P\tA#0#ABC0.1:12-13\tS1+,S1+,S2-,S3+\nW\tA\t0\tABC0.1\t12\t13\t>S1>S1<S2>S3\n";
+        let test_data =
+            "P\tA#0#ABC0.1:12-13\tS1+,S1+,S2-,S3+\nW\tA\t0\tABC0.1\t12\t13\t>S1>S1<S2>S3\n";
         let cursor = Cursor::new(test_data);
         let node_ids_by_name = get_node_registry();
         let (haplotypes, _, _) = parse_file_content_to_haplotypes(cursor, node_ids_by_name, false)?;
