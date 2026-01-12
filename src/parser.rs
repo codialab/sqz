@@ -5,8 +5,8 @@ use lazy_static::lazy_static;
 use regex::bytes::Regex;
 use std::{io::BufReader, str::FromStr};
 
-use crate::{helpers::{
-    DeterministicHashMap, NodeRegistry, PathSegment, utils::{Address, Digram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId}
+use crate::{decoding::decode_walk, helpers::{
+    DeterministicHashMap, NodeRegistry, PathSegment, ReverseNodeRegistry, utils::{Address, Digram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId}
 }};
 use std::{
     io::{self, BufRead, Read},
@@ -58,6 +58,37 @@ fn bufreader_from_compressed(file: &PathBuf) -> Result<io::BufReader<Box<dyn Rea
     } else {
         Err(anyhow!("Filename {:?} is not a valid filename", file))
     }
+}
+
+pub fn compare_file(file: &PathBuf, walks: &[Vec<NodeId>], grammar: &Grammar, node_ids_by_name: &NodeRegistry) {
+    let data = bufreader_from_compressed(file).expect("Can read file");
+    compare_file_content(data, walks, grammar, node_ids_by_name);
+}
+
+fn compare_file_content<R: Read>(reader: R, walks: &[Vec<NodeId>], grammar: &Grammar, node_ids_by_name: &NodeRegistry) {
+    let line_reader = ByteLineReader::new(reader);
+    let rev_node: ReverseNodeRegistry = node_ids_by_name.clone().into();
+    let mut counter = 0;
+    let mut found_error = false;
+    line_reader.for_each(|line| {
+        let h = path_from_line(&line, &node_ids_by_name);
+        if let Some((haplotype_name, expected)) = h {
+            let actual = decode_walk(walks[counter].clone(), grammar);
+            for i in 0..expected.len() {
+                if expected[i] != actual[i] {
+                    log::error!("Difference at {} ({}): {} (calculated) vs {} (expected)", haplotype_name.to_path_string(), i, rev_node.get_directed_name(actual[i]), rev_node.get_directed_name(expected[i]));
+                    found_error = true;
+                }
+            }
+            counter += 1;
+        }
+    });
+    
+    if found_error {
+        return;
+    }
+
+    println!("No differences were found!");
 }
 
 pub fn parse_file_to_haplotypes_with_grammar(

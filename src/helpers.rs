@@ -52,7 +52,7 @@ impl ReverseNodeRegistry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NodeRegistry {
     inner: DeterministicHashMap<Vec<u8>, UndirectedNodeId>,
     prefix: Vec<u8>,

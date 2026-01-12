@@ -2,33 +2,22 @@ use itertools::Itertools;
 
 use crate::{helpers::{PathSegment, ReverseNodeRegistry, utils::{NodeId, Orientation}}, parser::Grammar};
 
-pub fn decode_walks(haplotypes: Vec<(PathSegment, Vec<NodeId>)>, grammar: &Grammar, node_reg: &ReverseNodeRegistry, should_use_p_lines: bool) {
+pub fn decode_and_print_walks(haplotypes: Vec<(PathSegment, Vec<NodeId>)>, grammar: &Grammar, node_reg: &ReverseNodeRegistry, should_use_p_lines: bool) {
     for (name, walk) in haplotypes {
-        if should_use_p_lines {
-            print!("P\t{}\t", name.to_path_string());
-        } else {
-            print!("W\t{}\t", name.to_walk_string());
-        }
         let walk = decode_walk(walk, grammar);
+        print_walk(name, walk, node_reg, should_use_p_lines);
+    }
+}
 
-        // Print all nodes except last
-        for node in &walk[..walk.len() - 1] {
-            if should_use_p_lines {
-                let undirected = node.get_undirected();
-                let name = node_reg.get_name(undirected);
-                let direction = match node.1 {
-                    Orientation::Forward => '+',
-                    Orientation::Backward => '-',
-                };
-                print!("{}{},", name, direction);
-            } else {
-                let name = node_reg.get_directed_name(*node);
-                print!("{}", name);
-            }
-        }
+fn print_walk(name: PathSegment, walk: Vec<NodeId>, node_reg: &ReverseNodeRegistry, should_use_p_lines: bool) {
+    if should_use_p_lines {
+        print!("P\t{}\t", name.to_path_string());
+    } else {
+        print!("W\t{}\t", name.to_walk_string());
+    }
 
-        // Print last node (necessary due to P-lines)
-        let node = walk[walk.len() - 1];
+    // Print all nodes except last
+    for node in &walk[..walk.len() - 1] {
         if should_use_p_lines {
             let undirected = node.get_undirected();
             let name = node_reg.get_name(undirected);
@@ -36,16 +25,31 @@ pub fn decode_walks(haplotypes: Vec<(PathSegment, Vec<NodeId>)>, grammar: &Gramm
                 Orientation::Forward => '+',
                 Orientation::Backward => '-',
             };
-            print!("{}{}", name, direction);
+            print!("{}{},", name, direction);
         } else {
-            let name = node_reg.get_directed_name(node);
+            let name = node_reg.get_directed_name(*node);
             print!("{}", name);
         }
-        println!();
     }
+
+    // Print last node (necessary due to P-lines)
+    let node = walk[walk.len() - 1];
+    if should_use_p_lines {
+        let undirected = node.get_undirected();
+        let name = node_reg.get_name(undirected);
+        let direction = match node.1 {
+            Orientation::Forward => '+',
+            Orientation::Backward => '-',
+        };
+        print!("{}{}", name, direction);
+    } else {
+        let name = node_reg.get_directed_name(node);
+        print!("{}", name);
+    }
+    println!();
 }
 
-fn decode_walk(walk: Vec<NodeId>, grammar: &Grammar) -> Vec<NodeId> {
+pub fn decode_walk(walk: Vec<NodeId>, grammar: &Grammar) -> Vec<NodeId> {
     let mut decoded: Vec<NodeId> = Vec::new();
     for node in walk {
         decoded.extend(decode_node(node, grammar));
