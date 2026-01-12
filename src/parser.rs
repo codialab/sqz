@@ -3,14 +3,12 @@ use flate2::read::MultiGzDecoder;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::bytes::Regex;
-use std::{collections::HashMap, io::BufReader, str::FromStr};
+use std::{io::BufReader, str::FromStr};
 
-use crate::helpers::{
-    utils::Address, utils::Digram, utils::LocalizedDigram, utils::NodeId, utils::Orientation,
-    utils::UndirectedNodeId, Haplotype, NodeRegistry, PathSegment,
-};
+use crate::{helpers::{
+    DeterministicHashMap, NodeRegistry, PathSegment, utils::{Address, Digram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId}
+}};
 use std::{
-    collections::HashSet,
     io::{self, BufRead, Read},
     path::PathBuf,
 };
@@ -62,17 +60,81 @@ fn bufreader_from_compressed(file: &PathBuf) -> Result<io::BufReader<Box<dyn Rea
     }
 }
 
-pub fn parse_file_to_haplotypes(
+pub fn parse_file_to_haplotypes_with_grammar(
     file: &PathBuf,
     should_print_other_lines: bool,
-) -> Result<(Vec<Path>, NodeRegistry)> {
+) -> Result<(Vec<Path>, NodeRegistry, Grammar)> {
+    let data = bufreader_from_compressed(file)?;
+    let node_ids_by_name = parse_node_ids(data, true)?;
+    let data = bufreader_from_compressed(file)?;
+    let grammar = parse_grammar(data, &node_ids_by_name)?;
+    let data = bufreader_from_compressed(file)?;
+    let (paths, nodes) = parse_file_content_to_haplotypes(data, node_ids_by_name, should_print_other_lines)?;
+    Ok((paths, nodes, grammar))
+}
+
+
+pub fn parse_file_to_digrams(
+    file: &PathBuf,
+    should_print_other_lines: bool,
+) -> Result<(Vec<(PathSegment, Vec<LocalizedDigram>)>, NodeRegistry, DeterministicHashMap<usize, NodeId>)> {
     let data = bufreader_from_compressed(file)?;
     let node_ids_by_name = parse_node_ids(data, false)?;
     let data = bufreader_from_compressed(file)?;
-    parse_file_content_to_haplotypes(data, node_ids_by_name, should_print_other_lines)
+    parse_file_content_to_digrams(data, node_ids_by_name, should_print_other_lines)
+}
+
+#[derive(Debug)]
+pub enum DigramPath {
+    Digrams(Vec<LocalizedDigram>),
+    Monogram(NodeId)
+}
+
+pub fn get_digrams_from_haplotype(haplotype: &[NodeId]) -> DigramPath {
+    if haplotype.len() == 1  {
+        return DigramPath::Monogram(haplotype[0]);
+    }
+
+    let mut counter = 0;
+    let mut digrams: Vec<LocalizedDigram> = Vec::new();
+    haplotype.iter().tuple_windows().for_each(|(u, v)| {
+        let address = Address::new(counter, counter + 1);
+        counter += 1;
+        let digram = Digram::new(*u, *v);
+        let localized = LocalizedDigram::new(digram, address);
+        digrams.push(localized);
+    });
+    DigramPath::Digrams(digrams)
 }
 
 type Path = (PathSegment, Vec<NodeId>);
+
+fn parse_file_content_to_digrams<R: Read>(
+    reader: R,
+    node_ids_by_name: NodeRegistry,
+    should_print_other_lines: bool,
+) -> Result<(Vec<(PathSegment, Vec<LocalizedDigram>)>, NodeRegistry, DeterministicHashMap<usize, NodeId>)> {
+    let line_reader = ByteLineReader::new(reader);
+    let mut haplotypes: Vec<(PathSegment, Vec<LocalizedDigram>)> = Vec::new();
+    let mut monogram_paths = DeterministicHashMap::default();
+    line_reader.for_each(|line| {
+        let h = path_from_line(&line, &node_ids_by_name);
+        if let Some((haplotype_name, haplotype)) = h {
+            match get_digrams_from_haplotype(&haplotype) {
+                DigramPath::Digrams(digrams) => {
+                    haplotypes.push((haplotype_name, digrams));
+                }
+                DigramPath::Monogram(node) => {
+                    haplotypes.push((haplotype_name, Vec::new()));
+                    monogram_paths.insert(haplotypes.len() - 1, node);
+                }
+            }
+        } else if should_print_other_lines {
+            print!("{}", str::from_utf8(&line).expect("Line is valid utf-8"));
+        }
+    });
+    Ok((haplotypes, node_ids_by_name, monogram_paths))
+}
 
 fn parse_file_content_to_haplotypes<R: Read>(
     reader: R,
@@ -82,11 +144,13 @@ fn parse_file_content_to_haplotypes<R: Read>(
     let line_reader = ByteLineReader::new(reader);
     let mut haplotypes = Vec::new();
     line_reader.for_each(|line| {
-        let h = path_to_haplotype(&line, &node_ids_by_name);
+        let h = path_from_line(&line, &node_ids_by_name);
         if let Some(haplotype) = h {
             haplotypes.push(haplotype);
         } else if should_print_other_lines {
-            print!("{}", str::from_utf8(&line).expect("Line is valid utf-8"));
+            if line[0] != b'Q' {
+                print!("{}", str::from_utf8(&line).expect("Line is valid utf-8"));
+            }
         }
     });
     Ok((haplotypes, node_ids_by_name))
@@ -104,13 +168,13 @@ fn path_from_line(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<Path> 
     }
 }
 
-fn path_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(PathSegment, Vec<NodeId>)> {
+fn path_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<Path> {
     let (path_seg, buf_path_seg) = parse_path_identifier(line);
     let haplotype = parse_path_seq(buf_path_seg, node_ids_by_name);
     Some((path_seg, haplotype))
 }
 
-fn walk_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<(PathSegment, Vec<NodeId>)> {
+fn walk_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<Path> {
     let (path_seg, buf_path_seg) = parse_walk_identifier(line);
     let haplotype = parse_walk_seq(buf_path_seg, node_ids_by_name);
     Some((path_seg, haplotype))
@@ -126,7 +190,7 @@ fn parse_node_ids<R: Read>(data: R, with_q: bool) -> Result<NodeRegistry> {
         if buf[0] == b'S' || (with_q && buf[0] == b'Q') {
             let mut iter = buf[2..].iter();
             let offset = iter.position(|&x| x == b'\t').unwrap();
-            if node2id.insert(buf[2..offset + 2].to_vec()).is_err() {
+            if node2id.insert(buf[2..offset + 2].to_vec(), buf[0] == b'Q').is_err() {
                 println!("{}", str::from_utf8(&buf).unwrap());
                 panic!(
                     "Segment with ID {} occurs multiple times in GFA",
@@ -140,6 +204,33 @@ fn parse_node_ids<R: Read>(data: R, with_q: bool) -> Result<NodeRegistry> {
     log::info!("found: {} nodes", node2id.len());
     Ok(node2id)
 }
+
+pub type Grammar = DeterministicHashMap<UndirectedNodeId, (NodeId, NodeId)>;
+
+fn parse_grammar<R: Read>(data: R, node_ids_by_name: &NodeRegistry) -> Result<Grammar> {
+    let mut grammar = DeterministicHashMap::default();
+
+    log::info!("constructing grammar...");
+    let mut buf = vec![];
+    let mut data = BufReader::new(data);
+
+    while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
+        if buf[0] == b'Q' {
+            let mut iter = buf[2..].iter();
+            let offset = iter.position(|&x| x == b'\t').unwrap();
+            let rule_name = &buf[2..offset + 2];
+            let meta_node = node_ids_by_name.get_id(rule_name);
+            let right_hand_side = parse_walk_seq(&buf[offset + 3..], node_ids_by_name);
+            let right_hand_side = (right_hand_side[0], right_hand_side[1]);
+            grammar.insert(meta_node, right_hand_side);
+        }
+        buf.clear();
+    }
+
+    log::info!("found: {} rules", grammar.len());
+    Ok(grammar)
+}
+
 fn parse_path_identifier(data: &[u8]) -> (PathSegment, &[u8]) {
     let mut iter = data.iter();
 
@@ -224,6 +315,10 @@ pub fn get_haplotype_from_walk_string(
     text: &str,
     node_registry: &mut NodeRegistry,
 ) -> Vec<LocalizedDigram> {
+    use std::collections::HashSet;
+
+    use crate::helpers::utils::UndirectedNodeId;
+
     let data = text.as_bytes();
     let mut haplotype = Vec::new();
     let mut prev_counter = 0;
@@ -282,7 +377,7 @@ pub fn get_haplotypes_from_walk_strings(
 mod tests {
     use itertools::Itertools;
 
-    use crate::helpers::DeterministicHashMap;
+    use crate::helpers::{DeterministicHashMap, utils::UndirectedNodeId};
 
     use super::*;
     use std::io::Cursor;

@@ -102,6 +102,10 @@ impl UndirectedNodeId {
         Self(id, false)
     }
 
+    pub fn from(id: u32, is_meta_node: bool) -> Self {
+        Self(id, is_meta_node)
+    }
+
     pub fn new_meta_node(id: u32) -> Self {
         Self(id, true)
     }

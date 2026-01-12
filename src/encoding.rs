@@ -1,19 +1,16 @@
-use std::collections::HashMap;
-
 use itertools::Itertools;
 
 use crate::{
     grammar_building::Rule,
     helpers::{
-        digram_occurrences::DigramOccurrences,
-        utils::{Address, Digram, NodeId},
+        DeterministicHashMap, digram_occurrences::DigramOccurrences, utils::{Address, Digram, NodeId}
     },
 };
 
 pub fn get_haplotype_walks(
     d: &DigramOccurrences,
     rules: &[Rule],
-    singleton_haplotypes: &HashMap<usize, NodeId>,
+    singleton_haplotypes: &DeterministicHashMap<usize, NodeId>,
     number_of_paths: usize,
 ) -> Vec<Vec<NodeId>> {
     let mut walks: Vec<Vec<(Digram, Address)>> = vec![Vec::new(); number_of_paths];

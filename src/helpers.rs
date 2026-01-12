@@ -12,7 +12,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::helpers::utils::{
-    Address, AddressNumber, CanonicalDigram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId,
+    Address, AddressNumber, CanonicalDigram, NodeId, Orientation, UndirectedNodeId,
 };
 
 pub mod digram_occurrences;
@@ -90,15 +90,15 @@ impl NodeRegistry {
         }
     }
 
-    pub fn insert(&mut self, name: Vec<u8>) -> Result<()> {
-        self.get_inserted(name)
+    pub fn insert(&mut self, name: Vec<u8>, is_meta_node: bool) -> Result<()> {
+        self.get_inserted(name, is_meta_node)
             .ok_or_else(|| anyhow!("Inserted node name already appeared"))?;
         Ok(())
     }
 
-    fn get_inserted(&mut self, name: Vec<u8>) -> Option<UndirectedNodeId> {
+    fn get_inserted(&mut self, name: Vec<u8>, is_meta_node: bool) -> Option<UndirectedNodeId> {
         let new_node_id = self.inner.len();
-        let new_node_id = UndirectedNodeId::new(new_node_id as u32);
+        let new_node_id = UndirectedNodeId::from(new_node_id as u32, is_meta_node);
         self.inner.insert(name, new_node_id);
         Some(new_node_id)
     }
@@ -115,7 +115,7 @@ impl NodeRegistry {
         if self.inner.contains_key(&name) {
             self.get_id(&name)
         } else {
-            self.get_inserted(name.clone())
+            self.get_inserted(name.clone(), false)
                 .unwrap_or_else(|| panic!("{:?}: {:?}", name, self.inner))
         }
     }
@@ -283,8 +283,6 @@ impl Occurrence {
         sections
     }
 }
-
-pub type Haplotype = (PathSegment, Vec<LocalizedDigram>);
 
 #[derive(Clone, Debug)]
 pub struct Freq {
@@ -566,6 +564,14 @@ impl PathSegment {
             self.start.map(|x| x.to_string()).unwrap_or("*".to_string()),
             self.end.map(|x| x.to_string()).unwrap_or("*".to_string())
         )
+    }
+
+    pub fn to_path_string(&self) -> String {
+        if let (Some(start), Some(end)) = (self.start, self.end) {
+            format!("{}#{}#{}:{}-{}", self.sample, self.haplotype.as_ref().unwrap_or(&0.to_string()), self.seqid.as_ref().unwrap_or(&0.to_string()), start, end)
+        } else {
+            format!("{}#{}#{}", self.sample, self.haplotype.as_ref().unwrap_or(&0.to_string()), self.seqid.as_ref().unwrap_or(&0.to_string()))
+        }
     }
 
     #[allow(dead_code)]
