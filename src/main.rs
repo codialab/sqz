@@ -6,7 +6,7 @@ use itertools::Itertools;
 use std::{collections::HashSet, path::PathBuf};
 
 use crate::{
-    decoding::decode_and_print_walks, encoding::get_haplotype_walks, grammar_building::{Rule, build_grammar}, helpers::{PathSegment, ReverseNodeRegistry, utils::{CanonicalDigram, Digram, NodeId}}, parser::{Grammar, compare_file, parse_file_to_digrams, parse_file_to_haplotypes_with_grammar}, printing::{print_grammar, print_walks}
+    decoding::decode_and_print_walks, encoding::get_haplotype_walks, grammar_building::{Rule, build_grammar}, helpers::{NodeRegistry, PathSegment, ReverseNodeRegistry, utils::{CanonicalDigram, Digram, NodeId}}, parser::{Grammar, compare_file, parse_file_to_digrams, parse_file_to_haplotypes_with_grammar}, printing::{print_grammar, print_walks}
 };
 
 mod encoding;
@@ -79,6 +79,7 @@ fn main() -> Result<()> {
                     occurrences
                 );
             }
+            d.print_occurrences();
             print_grammar(&grammar, &rev_reg, true);
             let haplotype_walks =
                 get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
@@ -105,12 +106,14 @@ fn main() -> Result<()> {
             let grammar = build_grammar(&mut d, &mut node_registry);
             log::info!("Built grammar with {} rules", grammar.len());
 
+            d.print_occurrences();
+
             let haplotype_walks =
                 get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
             log::info!("Encoded {} haplotypes", haplotype_walks.len());
 
             let grammar: Grammar = grammar.into_iter().map(|(name, u, v, _)| (name.get_undirected(), (u, v))).collect(); 
-            check_incompressibility(&haplotype_walks, &grammar);
+            check_incompressibility(&haplotype_walks, &grammar, &node_registry);
 
             compare_file(&file, &haplotype_walks, &grammar, &node_registry);
         }
@@ -118,20 +121,25 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar) {
+fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar, node_registry: &NodeRegistry) {
     let mut digrams: HashSet<CanonicalDigram> = HashSet::new();
     let mut total_seen_digrams = 0;
+    let rev_node: ReverseNodeRegistry = node_registry.clone().into();
 
     for (_, rule) in grammar {
         let digram: CanonicalDigram = Digram::new(rule.0, rule.1).into();
-        digrams.insert(digram);
+        if !digrams.insert(digram.clone()) {
+            log::error!("Digram {:?} - {:?} seen twice in grammar", rev_node.get_directed_name(digram.0), rev_node.get_directed_name(digram.1));
+        }
         total_seen_digrams += 1;
     }
 
     for walk in walks {
         for (u, v) in walk.iter().tuple_windows() {
             let digram: CanonicalDigram = Digram::new(*u, *v).into();
-            digrams.insert(digram);
+            if !digrams.insert(digram.clone()) {
+                log::error!("Digram {:?} - {:?} seen twice", rev_node.get_directed_name(digram.0), rev_node.get_directed_name(digram.1));
+            }
             total_seen_digrams += 1;
         }
     }

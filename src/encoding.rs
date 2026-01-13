@@ -28,6 +28,8 @@ pub fn get_haplotype_walks(
         }
     }
 
+    log::debug!("walks: {:?}", walks);
+
     // Sort all singleton digrams
     let mut walks = walks
         .into_iter()

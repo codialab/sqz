@@ -26,9 +26,24 @@ impl DigramOccurrences {
         }
     }
 
+    pub fn print_occurrences(&self) {
+        for (digram, occurrences) in &self.inner {
+            println!("{:?}: {:?}", digram, occurrences);
+        }
+    } 
+
+    pub fn total_len(&self) -> usize {
+        self.into_iter().map(|(_, x)| x.len()).sum()
+    }
+
     #[allow(dead_code)]
     pub fn contains(&self, k: &CanonicalDigram) -> bool {
         self.inner.contains_key(k)
+    }
+
+    #[allow(dead_code)]
+    pub fn contains_occurrence(&self, k: &CanonicalDigram, o: &Occurrence) -> bool {
+        self.contains(k) && self.inner[k].contains(o)
     }
 
     pub fn from(haplotypes: Vec<Vec<LocalizedDigram>>) -> Self {

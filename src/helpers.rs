@@ -200,18 +200,13 @@ impl Occurrence {
         occurrences: HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
     ) -> (Vec<Occurrence>, Vec<Occurrence>, Vec<Occurrence>) {
         let mut uv = Vec::new();
-        let mut qq = Vec::new();
-        let mut vq = Vec::new();
+        let mut qq: Vec<Occurrence> = Vec::new();
+        let mut qv = Vec::new();
         let sections = Self::sectionize(occurrences);
-        for mut section in sections {
-            if section.len() % 2 == 0 {
-                vq.push(
-                    section
-                        .pop()
-                        .expect("Section needs to contain at least one element"),
-                );
-            }
-            for mut chunk in &section.into_iter().chunks(2) {
+        for section in sections {
+            println!("section: {:?}", qq);
+            for mut chunk in &section.iter().chunks(2) {
+                
                 let first = chunk.next().expect("Chunk contains at least one element");
                 uv.push(first.clone());
                 if let Some(second) = chunk.next() {
@@ -220,8 +215,12 @@ impl Occurrence {
                     qq.push(replace);
                 }
             }
+            if section.len() % 2 == 0 && !qq.is_empty() {
+                println!("qq: {:?}", qq);
+                qv.push(qq.pop().unwrap());
+            }
         }
-        (uv, qq, vq)
+        (uv, qq, qv)
     }
 
     #[allow(dead_code)]

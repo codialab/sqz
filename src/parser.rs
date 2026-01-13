@@ -75,7 +75,9 @@ fn compare_file_content<R: Read>(reader: R, walks: &[Vec<NodeId>], grammar: &Gra
         if let Some((haplotype_name, expected)) = h {
             let actual = decode_walk(walks[counter].clone(), grammar);
             for i in 0..expected.len() {
-                if expected[i] != actual[i] {
+                if i > actual.len() - 1 {
+                    log::error!("Difference at {} ({}): - (calculated) vs {} (expected)", haplotype_name.to_path_string(), i, rev_node.get_directed_name(expected[i]));
+                } else if expected[i] != actual[i] {
                     log::error!("Difference at {} ({}): {} (calculated) vs {} (expected)", haplotype_name.to_path_string(), i, rev_node.get_directed_name(actual[i]), rev_node.get_directed_name(expected[i]));
                     found_error = true;
                 }
@@ -379,9 +381,9 @@ pub fn get_haplotype_from_walk_string(
 
         prev_counter = curr_counter;
         if nodes_visited_curr.contains(&current_node.get_undirected()) {
-            curr_counter += 1;
             nodes_visited_curr.clear();
         }
+        curr_counter += 1;
         nodes_visited_curr.insert(current_node.get_undirected());
 
         let digram = Digram::new(prev_node, current_node);

@@ -51,27 +51,25 @@ fn build_rule(
     }
     if uv.get_u() == uv.get_v() {
         let (new_d_q, d_qq, d_qv) = Occurrence::split_self_loops(d_q);
-        println!("Self loop:");
+        println!("Self loop: {:?}{:?}", uv.get_u(), uv.get_v());
         println!("\td_qq: {:?}", d_qq);
         println!("\td_q: {:?}", new_d_q);
         println!("\td_qv: {:?}", d_qv);
         d_q = new_d_q.into_iter().collect();
         d.add_digram(&Digram::new(q, q).into(), d_qq.into_iter().collect());
-        d.add_digram(
-            &Digram::new(q, uv.get_v()).into(),
-            d_qv.into_iter().collect(),
-        );
+        let qv: CanonicalDigram = Digram::new(q, uv.get_v()).into();
+        if qv.get_u() == q {
+            d.add_digram(
+                &qv,
+                d_qv.into_iter().collect(),
+            );
+        } else {
+            d.add_digram(
+                &qv,
+                d_qv.into_iter().map(|x| x.flip()).collect(),
+            );
+        }
     }
-    // } else if d.contains(&Digram::new(uv.get_v(), uv.get_u()).into()) {
-    //     d.remove_digram(&Digram::new(uv.get_v(), uv.get_u()).into())
-    //         .into_iter()
-    //         .collect()
-    // } else {
-    //     Vec::new()
-    // };
-    // if !d_vu.is_empty() {
-    //     let (d_qq, d_vq, d_qu, d_vu) = Occurrence::split_pre_self_loop(d_vu, &d_q);
-    // }
     for occurrence in &d_q {
         let Some((right_neighbor, right_address_number)) = d.get_right_neighbor(&uv, occurrence)
         else {
@@ -100,6 +98,7 @@ fn build_rule(
 pub fn build_grammar(d: &mut DigramOccurrences, node_registry: &mut NodeRegistry) -> Vec<Rule> {
     let mut rules: Vec<Rule> = Vec::new();
     while let Some(uv) = d.get_most_frequent(2) {
+        log::debug!("Building rule: {:?}", uv);
         rules.push(build_rule(uv, d, node_registry));
     }
     rules
@@ -416,5 +415,50 @@ mod tests {
         assert_eq!(rule.1, v);
         assert_eq!(rule.2, self_loop_meta);
         assert_eq!(rule.3.len(), 1);
+    }
+
+    #[test]
+    fn test_loop_pre_loop_with_5_self_loops() {
+        let haplotypes = vec![">0>1>2>1>2>1>2>1>2>1>2>3"];
+        let mut node_registry = NodeRegistry::new();
+        let haplotypes = get_haplotypes_from_walk_strings(haplotypes, &mut node_registry);
+        println!("haplos: {:?}", haplotypes);
+        let mut d = DigramOccurrences::from(haplotypes);
+        println!("=============");
+        d.print_occurrences();
+        println!("=============");
+        let u = NodeId::new(node_registry.get_id("1".as_bytes()), Orientation::Forward);
+        let v = NodeId::new(node_registry.get_id("2".as_bytes()), Orientation::Forward);
+        let uv = Digram::new(u, v).into();
+        assert!(!d.are_neighbors_equal());
+        let rule = build_rule(uv, &mut d, &mut node_registry);
+        println!("Rule 1: {:?}", rule);
+        println!("=============");
+        d.print_occurrences();
+        println!("=============");
+        assert!(!d.are_neighbors_equal());
+        assert_eq!(rule.1, u);
+        assert_eq!(rule.2, v);
+        assert_eq!(rule.3.len(), 5);
+
+        let self_loop_meta = rule.0;
+        let uv = Digram::new(self_loop_meta, self_loop_meta).into();
+        let rule = build_rule(uv, &mut d, &mut node_registry);
+        println!("Rule 2: {:?}", rule);
+        assert!(!d.are_neighbors_equal());
+        assert_eq!(rule.1, self_loop_meta);
+        assert_eq!(rule.2, self_loop_meta);
+        assert_eq!(rule.3.len(), 2);
+
+        println!("=============");
+        d.print_occurrences();
+        println!("=============");
+        
+        assert_eq!(d.total_len(), 4);
+
+        let qv = Digram::new(rule.0, self_loop_meta).into();
+        let o = Occurrence::new(0, Address::new(9, 5));
+        assert!(d.contains_occurrence(&qv, &o));
+        
     }
 }
