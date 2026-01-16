@@ -76,9 +76,9 @@ fn compare_file_content<R: Read>(reader: R, walks: &[Vec<NodeId>], grammar: &Gra
             let actual = decode_walk(walks[counter].clone(), grammar);
             for i in 0..expected.len() {
                 if i > actual.len() - 1 {
-                    log::error!("Difference at {} ({}): - (calculated) vs {} (expected)", haplotype_name.to_path_string(), i, rev_node.get_directed_name(expected[i]));
+                    log::error!("Difference at {} ({}: {}): - (calculated) vs {} (expected)", haplotype_name.to_path_string(), counter, i, rev_node.get_directed_name(expected[i]));
                 } else if expected[i] != actual[i] {
-                    log::error!("Difference at {} ({}): {} (calculated) vs {} (expected)", haplotype_name.to_path_string(), i, rev_node.get_directed_name(actual[i]), rev_node.get_directed_name(expected[i]));
+                    log::error!("Difference at {} ({}: {}): {} (calculated) vs {} (expected)", haplotype_name.to_path_string(), counter, i, rev_node.get_directed_name(actual[i]), rev_node.get_directed_name(expected[i]));
                     found_error = true;
                 }
             }
@@ -222,7 +222,11 @@ fn parse_node_ids<R: Read>(data: R, with_q: bool) -> Result<NodeRegistry> {
     while data.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
         if buf[0] == b'S' || (with_q && buf[0] == b'Q') {
             let mut iter = buf[2..].iter();
-            let offset = iter.position(|&x| x == b'\t').unwrap();
+            let offset = iter.position(|&x| x == b'\t');
+            if offset.is_none() {
+                panic!("Line {} contains no tab", str::from_utf8(&buf[..]).unwrap());
+            }
+            let offset = offset.unwrap();
             if node2id.insert(buf[2..offset + 2].to_vec(), buf[0] == b'Q').is_err() {
                 println!("{}", str::from_utf8(&buf).unwrap());
                 panic!(

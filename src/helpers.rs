@@ -204,19 +204,16 @@ impl Occurrence {
         let mut qv = Vec::new();
         let sections = Self::sectionize(occurrences);
         for section in sections {
-            println!("section: {:?}", qq);
             for mut chunk in &section.iter().chunks(2) {
                 
                 let first = chunk.next().expect("Chunk contains at least one element");
                 uv.push(first.clone());
                 if let Some(second) = chunk.next() {
-                    println!("{:?} | {:?}", first, second);
                     let replace = Self(second.0, Address(first.1 .0, second.1 .1));
                     qq.push(replace);
                 }
             }
             if section.len() % 2 == 0 && !qq.is_empty() {
-                println!("qq: {:?}", qq);
                 qv.push(qq.pop().unwrap());
             }
         }

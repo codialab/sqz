@@ -8,10 +8,12 @@ pub struct Address(pub AddressNumber, pub AddressNumber);
 
 impl Ord for Address {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.0 <= self.1 {
+        if self.0 <= self.1 && other.0 <= other.1 {
             (self.0, self.1).cmp(&(other.0, other.1))
-        } else {
+        } else if self.0 > self.1 && other.0 > other. 1{
             (other.1, other.0).cmp(&(self.1, self.0))
+        } else {
+            AddressNumber::min(self.0, self.1).cmp(&AddressNumber::min(other.0, other.1))
         }
     }
 }
@@ -191,6 +193,12 @@ impl CanonicalDigram {
 
     pub fn get_v(&self) -> NodeId {
         self.1
+    }
+
+    // A digram is symmetric, i.e. both orientations are the same
+    // if its nodes are the same but their direction is opposite
+    pub fn is_symmetric(&self) -> bool {
+        self.0.0 == self.1.0 && self.0.1 != self.1.1
     }
 }
 

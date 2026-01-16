@@ -79,7 +79,6 @@ fn main() -> Result<()> {
                     occurrences
                 );
             }
-            d.print_occurrences();
             print_grammar(&grammar, &rev_reg, true);
             let haplotype_walks =
                 get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
@@ -103,10 +102,9 @@ fn main() -> Result<()> {
             let number_of_paths = haplotypes.len();
             log::info!("Parsed {} haplotypes", number_of_paths);
             let mut d = DigramOccurrences::from(haplotypes);
+            log::info!("Constructed occurrences of {} digrams", d.total_len());
             let grammar = build_grammar(&mut d, &mut node_registry);
             log::info!("Built grammar with {} rules", grammar.len());
-
-            d.print_occurrences();
 
             let haplotype_walks =
                 get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
@@ -144,6 +142,9 @@ fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar, node_regist
         }
     }
 
-    assert_eq!(digrams.len(), total_seen_digrams);
-    println!("Grammar and haplotypes cannot be compressed any further");
+    if digrams.len() != total_seen_digrams {
+        log::error!("{} digrams seen multiple times", total_seen_digrams - digrams.len());
+    } else {
+        println!("Grammar and haplotypes cannot be compressed any further");
+    }
 }

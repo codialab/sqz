@@ -3,6 +3,8 @@ use std::{
     hash::{BuildHasherDefault, DefaultHasher},
 };
 
+use anyhow::{Result, anyhow};
+
 use crate::helpers::{
     utils::LocalizedDigram, AddressNumber, CanonicalDigram, DeterministicHashMap,
     DeterministicHashSet, Freq, NeighborList, NodeId, Occurrence,
@@ -92,19 +94,39 @@ impl DigramOccurrences {
         })
     }
 
-    pub fn delete_occurrence(&mut self, index: &CanonicalDigram, value: &Occurrence) {
+    pub fn delete_occurrence(&mut self, index: &CanonicalDigram, value: &Occurrence) -> Result<()> {
+        let old_occurrence = self.inner[index].len();
+        let mut has_deleted = false;
+        if index.is_symmetric() {
+            self.neighbor_left.remove_occurrence(index, &value.flip(), false);
+            self.neighbor_right.remove_occurrence(index, &value.flip(), true);
+            if self.inner
+                .get_mut(index)
+                .expect("DigramOccurrences needs to contain digram to remove one of its occurrences")
+                .remove(&value.flip()) {
+                    has_deleted = true;
+            }
+        }
         self.neighbor_left.remove_occurrence(index, value, false);
         self.neighbor_right.remove_occurrence(index, value, true);
-        let old_occurrence = self.inner[index].len();
         self.freq
             .change_frequency(index, old_occurrence, old_occurrence - 1);
-        self.inner
+        if self.inner
             .get_mut(index)
             .expect("DigramOccurrences needs to contain digram to remove one of its occurrences")
-            .remove(value);
-        if self.inner[index].is_empty() {
-            self.inner.remove(index);
+            .remove(value) {
+                has_deleted = true;
         }
+        if !has_deleted {
+            return Err(anyhow!("Cannot delete occurrence in DigramOccurrences.inner"));
+        }
+        if self.inner[index].is_empty() {
+            return match self.inner.remove(index) {
+                Some(_) => Ok(()),
+                None => Err(anyhow!("Cannot delete occurrence set in DigramOccurrences.inner")),
+            };
+        }
+        Ok(())
     }
 
     // TODO change freq to not contain digrams of frequency 0
