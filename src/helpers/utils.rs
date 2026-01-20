@@ -1,7 +1,7 @@
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct AddressNumber(pub u64);
+pub struct AddressNumber(pub u32);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Address(pub AddressNumber, pub AddressNumber);
@@ -31,7 +31,7 @@ impl fmt::Debug for Address {
 }
 
 impl Address {
-    pub fn new(a: u64, b: u64) -> Self {
+    pub fn new(a: u32, b: u32) -> Self {
         Address(AddressNumber(a), AddressNumber(b))
     }
 
