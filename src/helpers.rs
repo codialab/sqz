@@ -164,7 +164,7 @@ impl From<Occurrence> for RuleOccurrence {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Occurrence(usize, Address);
+pub struct Occurrence(u32, Address);
 
 impl fmt::Debug for Occurrence {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -174,11 +174,11 @@ impl fmt::Debug for Occurrence {
 
 impl Occurrence {
     pub fn new(index: usize, address: Address) -> Self {
-        Self(index, address)
+        Self(index as u32, address)
     }
 
     pub fn get_haplotype(&self) -> usize {
-        self.0
+        self.0 as usize
     }
 
     pub fn get_address(&self) -> Address {
@@ -195,10 +195,10 @@ impl Occurrence {
             .into_iter()
             .map(|o| {
                 if flip {
-                    let replace = replacements[&(o.0, o.1 .1)];
+                    let replace = replacements[&(o.0 as usize, o.1 .1)];
                     Self(o.0, Address(o.1 .0, replace))
                 } else {
-                    let replace = replacements[&(o.0, o.1 .0)];
+                    let replace = replacements[&(o.0 as usize, o.1 .0)];
                     Self(o.0, Address(replace, o.1 .1))
                 }
             })
@@ -394,11 +394,11 @@ impl NeighborList {
         is_right_side: bool,
     ) {
         if is_right_side {
-            let key = (digram.get_u(), occurrence.0, occurrence.1.get_first());
+            let key = (digram.get_u(), occurrence.0 as usize, occurrence.1.get_first());
             let value = (digram.get_v(), occurrence.1.get_second());
             self.remove(key, value);
         } else {
-            let key = (digram.get_v(), occurrence.0, occurrence.1.get_second());
+            let key = (digram.get_v(), occurrence.0 as usize, occurrence.1.get_second());
             let value = (digram.get_u(), occurrence.1.get_first());
             self.remove(key, value);
         }
@@ -422,11 +422,11 @@ impl NeighborList {
         is_right_side: bool,
     ) {
         if is_right_side {
-            let key = (digram.get_u(), occurrence.0, occurrence.1.get_first());
+            let key = (digram.get_u(), occurrence.0 as usize, occurrence.1.get_first());
             let value = (digram.get_v(), occurrence.1.get_second());
             self.insert(key, value);
         } else {
-            let key = (digram.get_v(), occurrence.0, occurrence.1.get_second());
+            let key = (digram.get_v(), occurrence.0 as usize, occurrence.1.get_second());
             let value = (digram.get_u(), occurrence.1.get_first());
             self.insert(key, value);
         }

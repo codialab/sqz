@@ -171,7 +171,7 @@ impl DigramOccurrences {
         let haplotype_id = value.0;
         let address_number = value.1 .0;
         self.neighbor_left
-            .get_value(node_id, haplotype_id, address_number)
+            .get_value(node_id, haplotype_id as usize, address_number)
     }
 
     pub fn get_right_neighbor(
@@ -183,7 +183,7 @@ impl DigramOccurrences {
         let haplotype_id = value.0;
         let address_number = value.1 .1;
         self.neighbor_right
-            .get_value(node_id, haplotype_id, address_number)
+            .get_value(node_id, haplotype_id as usize, address_number)
     }
 
     pub fn get_most_frequent(&self, minimum_freq: usize) -> Option<CanonicalDigram> {
