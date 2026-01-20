@@ -1,12 +1,10 @@
 use core::panic;
 
 use crate::helpers::{
-    digram_occurrences::DigramOccurrences,
-    utils::{Address, AddressNumber, CanonicalDigram, Digram, LocalizedDigram, NodeId},
-    DeterministicHashSet, NodeRegistry, Occurrence,
+    DeterministicHashSet, NodeRegistry, Occurrence, RuleOccurrence, digram_occurrences::DigramOccurrences, utils::{Address, AddressNumber, CanonicalDigram, Digram, LocalizedDigram, NodeId}
 };
 
-pub type Rule = (NodeId, NodeId, NodeId, DeterministicHashSet<Occurrence>);
+pub type Rule = (NodeId, NodeId, NodeId, DeterministicHashSet<RuleOccurrence>);
 
 fn get_canonized(
     u: NodeId,
@@ -98,7 +96,7 @@ fn build_rule(
         );
         d.add_occurrence(&new_digram, new_occurrence);
     }
-    (q, uv.get_u(), uv.get_v(), d_q)
+    (q, uv.get_u(), uv.get_v(), d_q.into_iter().map(|o| o.into()).collect::<DeterministicHashSet<RuleOccurrence>>())
 }
 
 pub fn build_grammar(d: &mut DigramOccurrences, node_registry: &mut NodeRegistry) -> Vec<Rule> {

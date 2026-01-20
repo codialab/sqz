@@ -144,6 +144,25 @@ impl From<NodeRegistry> for ReverseNodeRegistry {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct RuleOccurrence(u32, bool);
+
+impl RuleOccurrence {
+    pub fn get_haplotype(&self) -> u32 {
+        self.0
+    }
+
+    pub fn is_forward(&self) -> bool {
+        self.1
+    }
+}
+
+impl From<Occurrence> for RuleOccurrence {
+    fn from(value: Occurrence) -> Self {
+        RuleOccurrence(value.0 as u32, value.1.is_forward())
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Occurrence(usize, Address);
 

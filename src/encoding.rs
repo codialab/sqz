@@ -72,8 +72,8 @@ pub fn get_haplotype_walks(
 fn get_single_meta_node_walk(single_node_walk: usize, rules: &[Rule]) -> Option<NodeId> {
     for rule in rules.iter().rev() {
         for occurrence in &rule.3 {
-            if occurrence.get_haplotype() == single_node_walk {
-                if occurrence.get_address().is_forward() {
+            if occurrence.get_haplotype() as usize == single_node_walk {
+                if occurrence.is_forward() {
                     return Some(rule.0);
                 } else {
                     return Some(rule.0.flip());
