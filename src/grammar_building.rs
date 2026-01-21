@@ -158,7 +158,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u);
         assert_eq!(rule.2, v);
-        assert_eq!(rule.3.len(), 2);
+        assert_eq!(rule.3.len(), 1);
     }
 
     #[test]
@@ -176,7 +176,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u);
         assert_eq!(rule.2, v);
-        assert_eq!(rule.3.len(), 4);
+        assert_eq!(rule.3.len(), 1);
         let self_loop_meta = rule.0;
         let uv = Digram::new(self_loop_meta, self_loop_meta).into();
         let rule = build_rule(uv, &mut d, &mut node_registry);
@@ -184,7 +184,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, self_loop_meta);
         assert_eq!(rule.2, self_loop_meta);
-        assert_eq!(rule.3.len(), 2);
+        assert_eq!(rule.3.len(), 1);
     }
 
     #[test]
@@ -202,7 +202,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u.flip());
         assert_eq!(rule.2, v.flip());
-        assert_eq!(rule.3.len(), 4);
+        assert_eq!(rule.3.len(), 1);
         let self_loop_meta = rule.0;
         let uv = Digram::new(self_loop_meta, self_loop_meta).into();
         let rule = build_rule(uv, &mut d, &mut node_registry);
@@ -210,7 +210,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, self_loop_meta);
         assert_eq!(rule.2, self_loop_meta);
-        assert_eq!(rule.3.len(), 2);
+        assert_eq!(rule.3.len(), 1);
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u);
         assert_eq!(rule.2, v);
-        assert_eq!(rule.3.len(), 3);
+        assert_eq!(rule.3.len(), 1);
         let self_loop_meta = rule.0;
         let uv = Digram::new(self_loop_meta, self_loop_meta).into();
         let rule = build_rule(uv, &mut d, &mut node_registry);
@@ -254,7 +254,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u);
         assert_eq!(rule.2, v);
-        assert_eq!(rule.3.len(), 3);
+        assert_eq!(rule.3.len(), 1);
         let self_loop_meta = rule.0;
         let uv = Digram::new(self_loop_meta, self_loop_meta).into();
         let rule = build_rule(uv, &mut d, &mut node_registry);
@@ -280,7 +280,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u);
         assert_eq!(rule.2, v);
-        assert_eq!(rule.3.len(), 2);
+        assert_eq!(rule.3.len(), 1);
         let self_loop_meta = rule.0;
         let uv = Digram::new(self_loop_meta, self_loop_meta).into();
         let rule = build_rule(uv, &mut d, &mut node_registry);
@@ -306,7 +306,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u);
         assert_eq!(rule.2, v);
-        assert_eq!(rule.3.len(), 2);
+        assert_eq!(rule.3.len(), 1);
         let self_loop_meta = rule.0;
         let uv = Digram::new(self_loop_meta, self_loop_meta).into();
         let rule = build_rule(uv, &mut d, &mut node_registry);
@@ -443,7 +443,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u);
         assert_eq!(rule.2, v);
-        assert_eq!(rule.3.len(), 5);
+        assert_eq!(rule.3.len(), 1);
 
         let self_loop_meta = rule.0;
         let uv = Digram::new(self_loop_meta, self_loop_meta).into();
@@ -452,7 +452,7 @@ mod tests {
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, self_loop_meta);
         assert_eq!(rule.2, self_loop_meta);
-        assert_eq!(rule.3.len(), 2);
+        assert_eq!(rule.3.len(), 1);
 
         println!("=============");
         d.print_occurrences();

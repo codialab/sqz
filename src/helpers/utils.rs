@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cmp::Ordering, fmt};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct AddressNumber(pub u32);
@@ -13,7 +13,17 @@ impl Ord for Address {
         } else if self.0 > self.1 && other.0 > other. 1{
             (other.1, other.0).cmp(&(self.1, self.0))
         } else {
-            AddressNumber::min(self.0, self.1).cmp(&AddressNumber::min(other.0, other.1))
+            let self_min = AddressNumber::min(self.0, self.1);
+            let other_min = AddressNumber::min(other.0, other.1);
+            if self_min < other_min {
+                Ordering::Less
+            } else if self_min > other_min {
+                Ordering::Greater
+            } else {
+                let self_max = AddressNumber::max(self.0, self.1);
+                let other_max = AddressNumber::max(self.0, self.1);
+                self_max.cmp(&other_max)
+            }
         }
     }
 }
