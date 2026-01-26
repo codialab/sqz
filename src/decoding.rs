@@ -88,14 +88,12 @@ fn decode_node(node: NodeId, grammar: &Grammar) -> Vec<NodeId> {
     let rule = vec![rule.0, rule.1];
     if node.is_forward() {
         rule.into_iter()
-            .map(|n| decode_node(n, grammar))
-            .flatten()
+            .flat_map(|n| decode_node(n, grammar))
             .collect_vec()
     } else {
         flip_seq(rule)
             .into_iter()
-            .map(|n| decode_node(n, grammar))
-            .flatten()
+            .flat_map(|n| decode_node(n, grammar))
             .collect_vec()
     }
 }

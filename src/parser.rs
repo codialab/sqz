@@ -21,6 +21,8 @@ lazy_static! {
     static ref RE_WALK: Regex = Regex::new(r"([><])([!-;=?-~]+)").unwrap();
 }
 
+type NamedPath = Vec<(PathSegment, Vec<LocalizedDigram>)>;
+
 struct ByteLineReader<R: io::Read> {
     data: io::BufReader<R>,
 }
@@ -85,7 +87,7 @@ fn compare_file_content<R: Read>(
     let mut counter = 0;
     let mut found_error = false;
     line_reader.for_each(|line| {
-        let h = path_from_line(&line, &node_ids_by_name);
+        let h = path_from_line(&line, node_ids_by_name);
         if let Some((haplotype_name, expected)) = h {
             let actual = decode_walk(walks[counter].clone(), grammar);
             for i in 0..expected.len() {
@@ -137,11 +139,7 @@ pub fn parse_file_to_haplotypes_with_grammar(
 pub fn parse_file_to_digrams(
     file: &PathBuf,
     should_print_other_lines: bool,
-) -> Result<(
-    Vec<(PathSegment, Vec<LocalizedDigram>)>,
-    NodeRegistry,
-    DeterministicHashMap<usize, NodeId>,
-)> {
+) -> Result<(NamedPath, NodeRegistry, DeterministicHashMap<usize, NodeId>)> {
     let data = bufreader_from_compressed(file)?;
     let node_ids_by_name = parse_node_ids(data, false)?;
     let data = bufreader_from_compressed(file)?;
@@ -177,11 +175,7 @@ fn parse_file_content_to_digrams<R: Read>(
     reader: R,
     node_ids_by_name: NodeRegistry,
     should_print_other_lines: bool,
-) -> Result<(
-    Vec<(PathSegment, Vec<LocalizedDigram>)>,
-    NodeRegistry,
-    DeterministicHashMap<usize, NodeId>,
-)> {
+) -> Result<(NamedPath, NodeRegistry, DeterministicHashMap<usize, NodeId>)> {
     let line_reader = ByteLineReader::new(reader);
     let mut haplotypes: Vec<(PathSegment, Vec<LocalizedDigram>)> = Vec::new();
     let mut monogram_paths = DeterministicHashMap::default();
@@ -215,10 +209,8 @@ fn parse_file_content_to_haplotypes<R: Read>(
         let h = path_from_line(&line, &node_ids_by_name);
         if let Some(haplotype) = h {
             haplotypes.push(haplotype);
-        } else if should_print_other_lines {
-            if line[0] != b'Q' {
-                print!("{}", str::from_utf8(&line).expect("Line is valid utf-8"));
-            }
+        } else if should_print_other_lines && line[0] != b'Q' {
+            print!("{}", str::from_utf8(&line).expect("Line is valid utf-8"));
         }
     });
     Ok((haplotypes, node_ids_by_name))

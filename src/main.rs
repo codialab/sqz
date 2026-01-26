@@ -133,7 +133,7 @@ fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar, node_regist
     let mut total_seen_digrams = 0;
     let rev_node: ReverseNodeRegistry = node_registry.clone().into();
 
-    for (_, rule) in grammar {
+    for rule in grammar.values() {
         let digram: CanonicalDigram = Digram::new(rule.0, rule.1).into();
         if !digrams.insert(digram.clone()) {
             log::error!(

@@ -159,7 +159,7 @@ impl RuleOccurrence {
 
 impl From<Occurrence> for RuleOccurrence {
     fn from(value: Occurrence) -> Self {
-        RuleOccurrence(value.0 as u32, value.1.is_forward())
+        RuleOccurrence(value.0, value.1.is_forward())
     }
 }
 
