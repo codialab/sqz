@@ -1,7 +1,9 @@
 use core::panic;
 
 use crate::helpers::{
-    DeterministicHashSet, NodeRegistry, Occurrence, RuleOccurrence, digram_occurrences::DigramOccurrences, utils::{Address, AddressNumber, CanonicalDigram, Digram, LocalizedDigram, NodeId}
+    digram_occurrences::DigramOccurrences,
+    utils::{Address, AddressNumber, CanonicalDigram, Digram, LocalizedDigram, NodeId},
+    DeterministicHashSet, NodeRegistry, Occurrence, RuleOccurrence,
 };
 
 pub type Rule = (NodeId, NodeId, NodeId, DeterministicHashSet<RuleOccurrence>);
@@ -61,15 +63,9 @@ fn build_rule(
         d.add_digram(&Digram::new(q, q).into(), d_qq.into_iter().collect());
         let qv: CanonicalDigram = Digram::new(q, uv.get_v()).into();
         if qv.get_u() == q {
-            d.add_digram(
-                &qv,
-                d_qv.into_iter().collect(),
-            );
+            d.add_digram(&qv, d_qv.into_iter().collect());
         } else {
-            d.add_digram(
-                &qv,
-                d_qv.into_iter().map(|x| x.flip()).collect(),
-            );
+            d.add_digram(&qv, d_qv.into_iter().map(|x| x.flip()).collect());
         }
     }
     for occurrence in &d_q {
@@ -96,7 +92,14 @@ fn build_rule(
         );
         d.add_occurrence(&new_digram, new_occurrence);
     }
-    (q, uv.get_u(), uv.get_v(), d_q.into_iter().map(|o| o.into()).collect::<DeterministicHashSet<RuleOccurrence>>())
+    (
+        q,
+        uv.get_u(),
+        uv.get_v(),
+        d_q.into_iter()
+            .map(|o| o.into())
+            .collect::<DeterministicHashSet<RuleOccurrence>>(),
+    )
 }
 
 pub fn build_grammar(d: &mut DigramOccurrences, node_registry: &mut NodeRegistry) -> Vec<Rule> {
@@ -193,12 +196,19 @@ mod tests {
         let mut node_registry = NodeRegistry::new();
         let haplotypes = get_haplotypes_from_walk_strings(haplotypes, &mut node_registry);
         let mut d = DigramOccurrences::from(haplotypes);
+        println!("=============");
+        d.print_occurrences();
+        println!("=============");
         let u = NodeId::new(node_registry.get_id("1".as_bytes()), Orientation::Backward);
         let v = NodeId::new(node_registry.get_id("1".as_bytes()), Orientation::Backward);
         let uv = Digram::new(u, v).into();
         assert!(!d.are_neighbors_equal());
         let rule = build_rule(uv, &mut d, &mut node_registry);
         println!("Rule: {:?}", rule);
+        println!("=============");
+        d.print_occurrences();
+        println!("=============");
+
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, u.flip());
         assert_eq!(rule.2, v.flip());
@@ -207,6 +217,9 @@ mod tests {
         let uv = Digram::new(self_loop_meta, self_loop_meta).into();
         let rule = build_rule(uv, &mut d, &mut node_registry);
         println!("Rule: {:?}", rule);
+        println!("=============");
+        d.print_occurrences();
+        println!("=============");
         assert!(!d.are_neighbors_equal());
         assert_eq!(rule.1, self_loop_meta);
         assert_eq!(rule.2, self_loop_meta);
@@ -457,13 +470,12 @@ mod tests {
         println!("=============");
         d.print_occurrences();
         println!("=============");
-        
+
         assert_eq!(d.total_len(), 4);
 
         let qv = Digram::new(rule.0, self_loop_meta).into();
         let o = Occurrence::new(0, Address::new(9, 5));
         assert!(d.contains_occurrence(&qv, &o));
-        
     }
 
     #[test]
@@ -471,11 +483,21 @@ mod tests {
         let haplotypes = vec![">3>1<0<2>2>0<4"];
         let mut node_registry = NodeRegistry::new();
 
-        node_registry.insert("0".as_bytes().to_vec(), false).unwrap();
-        node_registry.insert("1".as_bytes().to_vec(), false).unwrap();
-        node_registry.insert("2".as_bytes().to_vec(), false).unwrap();
-        node_registry.insert("3".as_bytes().to_vec(), false).unwrap();
-        node_registry.insert("4".as_bytes().to_vec(), false).unwrap();
+        node_registry
+            .insert("0".as_bytes().to_vec(), false)
+            .unwrap();
+        node_registry
+            .insert("1".as_bytes().to_vec(), false)
+            .unwrap();
+        node_registry
+            .insert("2".as_bytes().to_vec(), false)
+            .unwrap();
+        node_registry
+            .insert("3".as_bytes().to_vec(), false)
+            .unwrap();
+        node_registry
+            .insert("4".as_bytes().to_vec(), false)
+            .unwrap();
 
         let haplotypes = get_haplotypes_from_walk_strings(haplotypes, &mut node_registry);
         println!("haplos: {:?}", haplotypes);
@@ -515,7 +537,45 @@ mod tests {
         println!("=============");
         d.print_occurrences();
         println!("=============");
-        
+
         assert_eq!(d.total_len(), 3);
+    }
+
+    #[test]
+    fn test_double_reverse_self_loop() {
+        let haplotypes = vec![">0>1>1>1>1>2<1<1<1>3"];
+        let mut node_registry = NodeRegistry::new();
+
+        node_registry
+            .insert("0".as_bytes().to_vec(), false)
+            .unwrap();
+        node_registry
+            .insert("1".as_bytes().to_vec(), false)
+            .unwrap();
+        node_registry
+            .insert("2".as_bytes().to_vec(), false)
+            .unwrap();
+        node_registry
+            .insert("3".as_bytes().to_vec(), false)
+            .unwrap();
+        node_registry
+            .insert("4".as_bytes().to_vec(), false)
+            .unwrap();
+
+        let haplotypes = get_haplotypes_from_walk_strings(haplotypes, &mut node_registry);
+        println!("haplos: {:?}", haplotypes);
+        let mut d = DigramOccurrences::from(haplotypes);
+        println!("=============");
+        d.print_occurrences();
+        println!("=============");
+        let u = NodeId::new(node_registry.get_id("1".as_bytes()), Orientation::Forward);
+        let v = NodeId::new(node_registry.get_id("1".as_bytes()), Orientation::Forward);
+        let uv = Digram::new(u, v).into();
+        assert!(!d.are_neighbors_equal());
+        let rule = build_rule(uv, &mut d, &mut node_registry);
+        println!("Rule 1: {:?}", rule);
+        println!("=============");
+        d.print_occurrences();
+        println!("=============");
     }
 }

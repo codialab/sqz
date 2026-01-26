@@ -3,7 +3,9 @@ use itertools::Itertools;
 use crate::{
     grammar_building::Rule,
     helpers::{
-        DeterministicHashMap, digram_occurrences::DigramOccurrences, utils::{Address, Digram, NodeId}
+        digram_occurrences::DigramOccurrences,
+        utils::{Address, Digram, NodeId},
+        DeterministicHashMap,
     },
 };
 
@@ -53,7 +55,10 @@ pub fn get_haplotype_walks(
         .enumerate()
         .filter_map(|(idx, walk)| if walk.is_empty() { Some(idx) } else { None })
         .collect_vec();
-    log::info!("Found {} walks consisting of only a single node", single_node_walks.len());
+    log::info!(
+        "Found {} walks consisting of only a single node",
+        single_node_walks.len()
+    );
     for single_node_walk in single_node_walks {
         if singleton_haplotypes.contains_key(&single_node_walk) {
             walks[single_node_walk].push(singleton_haplotypes[&single_node_walk]);

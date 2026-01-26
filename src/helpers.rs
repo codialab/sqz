@@ -224,7 +224,6 @@ impl Occurrence {
         let sections = Self::sectionize(occurrences);
         for section in sections {
             for mut chunk in &section.iter().chunks(2) {
-                
                 let first = chunk.next().expect("Chunk contains at least one element");
                 uv.push(first.clone());
                 if let Some(second) = chunk.next() {
@@ -290,11 +289,21 @@ impl Occurrence {
                 {
                     current_section.push(second.clone());
                 } else {
-                    sections.push(mem::take(&mut current_section));
+                    let previous_section = mem::take(&mut current_section);
+                    if !previous_section.is_empty() && !previous_section[0].1.is_forward() {
+                        sections.push(previous_section.into_iter().rev().collect_vec());
+                    } else {
+                        sections.push(previous_section);
+                    }
                     current_section = vec![second.clone()];
                 }
             });
-        sections.push(mem::take(&mut current_section));
+        let previous_section = mem::take(&mut current_section);
+        if !previous_section.is_empty() && !previous_section[0].1.is_forward() {
+            sections.push(previous_section.into_iter().rev().collect_vec());
+        } else {
+            sections.push(previous_section);
+        }
         sections
     }
 }
@@ -394,11 +403,19 @@ impl NeighborList {
         is_right_side: bool,
     ) {
         if is_right_side {
-            let key = (digram.get_u(), occurrence.0 as usize, occurrence.1.get_first());
+            let key = (
+                digram.get_u(),
+                occurrence.0 as usize,
+                occurrence.1.get_first(),
+            );
             let value = (digram.get_v(), occurrence.1.get_second());
             self.remove(key, value);
         } else {
-            let key = (digram.get_v(), occurrence.0 as usize, occurrence.1.get_second());
+            let key = (
+                digram.get_v(),
+                occurrence.0 as usize,
+                occurrence.1.get_second(),
+            );
             let value = (digram.get_u(), occurrence.1.get_first());
             self.remove(key, value);
         }
@@ -422,11 +439,19 @@ impl NeighborList {
         is_right_side: bool,
     ) {
         if is_right_side {
-            let key = (digram.get_u(), occurrence.0 as usize, occurrence.1.get_first());
+            let key = (
+                digram.get_u(),
+                occurrence.0 as usize,
+                occurrence.1.get_first(),
+            );
             let value = (digram.get_v(), occurrence.1.get_second());
             self.insert(key, value);
         } else {
-            let key = (digram.get_v(), occurrence.0 as usize, occurrence.1.get_second());
+            let key = (
+                digram.get_v(),
+                occurrence.0 as usize,
+                occurrence.1.get_second(),
+            );
             let value = (digram.get_u(), occurrence.1.get_first());
             self.insert(key, value);
         }
@@ -583,9 +608,21 @@ impl PathSegment {
 
     pub fn to_path_string(&self) -> String {
         if let (Some(start), Some(end)) = (self.start, self.end) {
-            format!("{}#{}#{}:{}-{}", self.sample, self.haplotype.as_ref().unwrap_or(&0.to_string()), self.seqid.as_ref().unwrap_or(&0.to_string()), start, end)
+            format!(
+                "{}#{}#{}:{}-{}",
+                self.sample,
+                self.haplotype.as_ref().unwrap_or(&0.to_string()),
+                self.seqid.as_ref().unwrap_or(&0.to_string()),
+                start,
+                end
+            )
         } else {
-            format!("{}#{}#{}", self.sample, self.haplotype.as_ref().unwrap_or(&0.to_string()), self.seqid.as_ref().unwrap_or(&0.to_string()))
+            format!(
+                "{}#{}#{}",
+                self.sample,
+                self.haplotype.as_ref().unwrap_or(&0.to_string()),
+                self.seqid.as_ref().unwrap_or(&0.to_string())
+            )
         }
     }
 

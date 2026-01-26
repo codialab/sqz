@@ -1,15 +1,31 @@
 use itertools::Itertools;
 
-use crate::{helpers::{PathSegment, ReverseNodeRegistry, utils::{NodeId, Orientation}}, parser::Grammar};
+use crate::{
+    helpers::{
+        utils::{NodeId, Orientation},
+        PathSegment, ReverseNodeRegistry,
+    },
+    parser::Grammar,
+};
 
-pub fn decode_and_print_walks(haplotypes: Vec<(PathSegment, Vec<NodeId>)>, grammar: &Grammar, node_reg: &ReverseNodeRegistry, should_use_p_lines: bool) {
+pub fn decode_and_print_walks(
+    haplotypes: Vec<(PathSegment, Vec<NodeId>)>,
+    grammar: &Grammar,
+    node_reg: &ReverseNodeRegistry,
+    should_use_p_lines: bool,
+) {
     for (name, walk) in haplotypes {
         let walk = decode_walk(walk, grammar);
         print_walk(name, walk, node_reg, should_use_p_lines);
     }
 }
 
-fn print_walk(name: PathSegment, walk: Vec<NodeId>, node_reg: &ReverseNodeRegistry, should_use_p_lines: bool) {
+fn print_walk(
+    name: PathSegment,
+    walk: Vec<NodeId>,
+    node_reg: &ReverseNodeRegistry,
+    should_use_p_lines: bool,
+) {
     if should_use_p_lines {
         print!("P\t{}\t", name.to_path_string());
     } else {
@@ -66,11 +82,20 @@ fn decode_node(node: NodeId, grammar: &Grammar) -> Vec<NodeId> {
         return vec![node];
     }
 
-    let rule = grammar.get(&node.get_undirected()).expect("All meta nodes have rules");
+    let rule = grammar
+        .get(&node.get_undirected())
+        .expect("All meta nodes have rules");
     let rule = vec![rule.0, rule.1];
     if node.is_forward() {
-        rule.into_iter().map(|n| decode_node(n, grammar)).flatten().collect_vec()
+        rule.into_iter()
+            .map(|n| decode_node(n, grammar))
+            .flatten()
+            .collect_vec()
     } else {
-        flip_seq(rule).into_iter().map(|n| decode_node(n, grammar)).flatten().collect_vec()
+        flip_seq(rule)
+            .into_iter()
+            .map(|n| decode_node(n, grammar))
+            .flatten()
+            .collect_vec()
     }
 }

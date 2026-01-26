@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt};
+use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct AddressNumber(pub u32);
@@ -8,23 +8,19 @@ pub struct Address(pub AddressNumber, pub AddressNumber);
 
 impl Ord for Address {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.0 <= self.1 && other.0 <= other.1 {
-            (self.0, self.1).cmp(&(other.0, other.1))
-        } else if self.0 > self.1 && other.0 > other. 1{
-            (other.1, other.0).cmp(&(self.1, self.0))
+        let self_norm = if self.0 <= self.1 {
+            (self.0, self.1)
         } else {
-            let self_min = AddressNumber::min(self.0, self.1);
-            let other_min = AddressNumber::min(other.0, other.1);
-            if self_min < other_min {
-                Ordering::Less
-            } else if self_min > other_min {
-                Ordering::Greater
-            } else {
-                let self_max = AddressNumber::max(self.0, self.1);
-                let other_max = AddressNumber::max(self.0, self.1);
-                self_max.cmp(&other_max)
-            }
-        }
+            (self.1, self.0)
+        };
+
+        let other_norm = if other.0 <= other.1 {
+            (other.0, other.1)
+        } else {
+            (other.1, other.0)
+        };
+
+        self_norm.cmp(&other_norm)
     }
 }
 
@@ -208,7 +204,7 @@ impl CanonicalDigram {
     // A digram is symmetric, i.e. both orientations are the same
     // if its nodes are the same but their direction is opposite
     pub fn is_symmetric(&self) -> bool {
-        self.0.0 == self.1.0 && self.0.1 != self.1.1
+        self.0 .0 == self.1 .0 && self.0 .1 != self.1 .1
     }
 }
 

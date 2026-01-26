@@ -5,9 +5,13 @@ use lazy_static::lazy_static;
 use regex::bytes::Regex;
 use std::{io::BufReader, str::FromStr};
 
-use crate::{decoding::decode_walk, helpers::{
-    DeterministicHashMap, NodeRegistry, PathSegment, ReverseNodeRegistry, utils::{Address, Digram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId}
-}};
+use crate::{
+    decoding::decode_walk,
+    helpers::{
+        utils::{Address, Digram, LocalizedDigram, NodeId, Orientation, UndirectedNodeId},
+        DeterministicHashMap, NodeRegistry, PathSegment, ReverseNodeRegistry,
+    },
+};
 use std::{
     io::{self, BufRead, Read},
     path::PathBuf,
@@ -60,12 +64,22 @@ fn bufreader_from_compressed(file: &PathBuf) -> Result<io::BufReader<Box<dyn Rea
     }
 }
 
-pub fn compare_file(file: &PathBuf, walks: &[Vec<NodeId>], grammar: &Grammar, node_ids_by_name: &NodeRegistry) {
+pub fn compare_file(
+    file: &PathBuf,
+    walks: &[Vec<NodeId>],
+    grammar: &Grammar,
+    node_ids_by_name: &NodeRegistry,
+) {
     let data = bufreader_from_compressed(file).expect("Can read file");
     compare_file_content(data, walks, grammar, node_ids_by_name);
 }
 
-fn compare_file_content<R: Read>(reader: R, walks: &[Vec<NodeId>], grammar: &Grammar, node_ids_by_name: &NodeRegistry) {
+fn compare_file_content<R: Read>(
+    reader: R,
+    walks: &[Vec<NodeId>],
+    grammar: &Grammar,
+    node_ids_by_name: &NodeRegistry,
+) {
     let line_reader = ByteLineReader::new(reader);
     let rev_node: ReverseNodeRegistry = node_ids_by_name.clone().into();
     let mut counter = 0;
@@ -76,16 +90,29 @@ fn compare_file_content<R: Read>(reader: R, walks: &[Vec<NodeId>], grammar: &Gra
             let actual = decode_walk(walks[counter].clone(), grammar);
             for i in 0..expected.len() {
                 if i > actual.len() - 1 {
-                    log::error!("Difference at {} ({}: {}): - (calculated) vs {} (expected)", haplotype_name.to_path_string(), counter, i, rev_node.get_directed_name(expected[i]));
+                    log::error!(
+                        "Difference at {} ({}: {}): - (calculated) vs {} (expected)",
+                        haplotype_name.to_path_string(),
+                        counter,
+                        i,
+                        rev_node.get_directed_name(expected[i])
+                    );
                 } else if expected[i] != actual[i] {
-                    log::error!("Difference at {} ({}: {}): {} (calculated) vs {} (expected)", haplotype_name.to_path_string(), counter, i, rev_node.get_directed_name(actual[i]), rev_node.get_directed_name(expected[i]));
+                    log::error!(
+                        "Difference at {} ({}: {}): {} (calculated) vs {} (expected)",
+                        haplotype_name.to_path_string(),
+                        counter,
+                        i,
+                        rev_node.get_directed_name(actual[i]),
+                        rev_node.get_directed_name(expected[i])
+                    );
                     found_error = true;
                 }
             }
             counter += 1;
         }
     });
-    
+
     if found_error {
         return;
     }
@@ -102,15 +129,19 @@ pub fn parse_file_to_haplotypes_with_grammar(
     let data = bufreader_from_compressed(file)?;
     let grammar = parse_grammar(data, &node_ids_by_name)?;
     let data = bufreader_from_compressed(file)?;
-    let (paths, nodes) = parse_file_content_to_haplotypes(data, node_ids_by_name, should_print_other_lines)?;
+    let (paths, nodes) =
+        parse_file_content_to_haplotypes(data, node_ids_by_name, should_print_other_lines)?;
     Ok((paths, nodes, grammar))
 }
-
 
 pub fn parse_file_to_digrams(
     file: &PathBuf,
     should_print_other_lines: bool,
-) -> Result<(Vec<(PathSegment, Vec<LocalizedDigram>)>, NodeRegistry, DeterministicHashMap<usize, NodeId>)> {
+) -> Result<(
+    Vec<(PathSegment, Vec<LocalizedDigram>)>,
+    NodeRegistry,
+    DeterministicHashMap<usize, NodeId>,
+)> {
     let data = bufreader_from_compressed(file)?;
     let node_ids_by_name = parse_node_ids(data, false)?;
     let data = bufreader_from_compressed(file)?;
@@ -120,11 +151,11 @@ pub fn parse_file_to_digrams(
 #[derive(Debug)]
 pub enum DigramPath {
     Digrams(Vec<LocalizedDigram>),
-    Monogram(NodeId)
+    Monogram(NodeId),
 }
 
 pub fn get_digrams_from_haplotype(haplotype: &[NodeId]) -> DigramPath {
-    if haplotype.len() == 1  {
+    if haplotype.len() == 1 {
         return DigramPath::Monogram(haplotype[0]);
     }
 
@@ -146,7 +177,11 @@ fn parse_file_content_to_digrams<R: Read>(
     reader: R,
     node_ids_by_name: NodeRegistry,
     should_print_other_lines: bool,
-) -> Result<(Vec<(PathSegment, Vec<LocalizedDigram>)>, NodeRegistry, DeterministicHashMap<usize, NodeId>)> {
+) -> Result<(
+    Vec<(PathSegment, Vec<LocalizedDigram>)>,
+    NodeRegistry,
+    DeterministicHashMap<usize, NodeId>,
+)> {
     let line_reader = ByteLineReader::new(reader);
     let mut haplotypes: Vec<(PathSegment, Vec<LocalizedDigram>)> = Vec::new();
     let mut monogram_paths = DeterministicHashMap::default();
@@ -227,7 +262,10 @@ fn parse_node_ids<R: Read>(data: R, with_q: bool) -> Result<NodeRegistry> {
                 panic!("Line {} contains no tab", str::from_utf8(&buf[..]).unwrap());
             }
             let offset = offset.unwrap();
-            if node2id.insert(buf[2..offset + 2].to_vec(), buf[0] == b'Q').is_err() {
+            if node2id
+                .insert(buf[2..offset + 2].to_vec(), buf[0] == b'Q')
+                .is_err()
+            {
                 println!("{}", str::from_utf8(&buf).unwrap());
                 panic!(
                     "Segment with ID {} occurs multiple times in GFA",
@@ -326,7 +364,8 @@ fn parse_path_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> Vec<NodeId> {
             let current_node = node_ids_by_name.get_id(&current_node[..current_node.len() - 1]);
 
             NodeId::new(current_node, orientation)
-        }).collect_vec();
+        })
+        .collect_vec();
     log::debug!("parsing path sequences of size {} bytes..", end);
     haplotype
 }
@@ -337,12 +376,15 @@ fn parse_walk_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> Vec<NodeId> {
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
         .unwrap();
 
-    let haplotype = RE_WALK.captures_iter(&data[..end]).map(|m| {
-        let orientation = Orientation::from_walk(m[1][0]);
-        let current_node = node_ids_by_name.get_id(&m[2]);
+    let haplotype = RE_WALK
+        .captures_iter(&data[..end])
+        .map(|m| {
+            let orientation = Orientation::from_walk(m[1][0]);
+            let current_node = node_ids_by_name.get_id(&m[2]);
 
-        NodeId::new(current_node, orientation)
-    }).collect_vec();
+            NodeId::new(current_node, orientation)
+        })
+        .collect_vec();
     log::debug!("parsing walk sequences of size {} bytes..", end);
     haplotype
 }
@@ -414,7 +456,7 @@ pub fn get_haplotypes_from_walk_strings(
 mod tests {
     use itertools::Itertools;
 
-    use crate::helpers::{DeterministicHashMap, utils::UndirectedNodeId};
+    use crate::helpers::{utils::UndirectedNodeId, DeterministicHashMap};
 
     use super::*;
     use std::io::Cursor;

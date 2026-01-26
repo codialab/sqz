@@ -6,11 +6,19 @@ use itertools::Itertools;
 use std::{collections::HashSet, path::PathBuf};
 
 use crate::{
-    decoding::decode_and_print_walks, encoding::get_haplotype_walks, grammar_building::{Rule, build_grammar}, helpers::{NodeRegistry, PathSegment, ReverseNodeRegistry, utils::{CanonicalDigram, Digram, NodeId}}, parser::{Grammar, compare_file, parse_file_to_digrams, parse_file_to_haplotypes_with_grammar}, printing::{print_grammar, print_walks}
+    decoding::decode_and_print_walks,
+    encoding::get_haplotype_walks,
+    grammar_building::{build_grammar, Rule},
+    helpers::{
+        utils::{CanonicalDigram, Digram, NodeId},
+        NodeRegistry, PathSegment, ReverseNodeRegistry,
+    },
+    parser::{compare_file, parse_file_to_digrams, parse_file_to_haplotypes_with_grammar, Grammar},
+    printing::{print_grammar, print_walks},
 };
 
-mod encoding;
 mod decoding;
+mod encoding;
 mod grammar_building;
 mod helpers;
 mod parser;
@@ -84,12 +92,10 @@ fn main() -> Result<()> {
                 get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
             print_walks(&haplotype_walks, &rev_reg, &haplotype_names);
         }
-        Commands::Decompress {
-            file,
-            use_p_lines,
-        } => {
+        Commands::Decompress { file, use_p_lines } => {
             log::info!("Decompressing file {:?}", file);
-            let (haplotypes, node_registry, grammar) = parse_file_to_haplotypes_with_grammar(&file, true)?;
+            let (haplotypes, node_registry, grammar) =
+                parse_file_to_haplotypes_with_grammar(&file, true)?;
             let rev_reg: ReverseNodeRegistry = node_registry.into();
             decode_and_print_walks(haplotypes, &grammar, &rev_reg, use_p_lines);
         }
@@ -110,7 +116,10 @@ fn main() -> Result<()> {
                 get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
             log::info!("Encoded {} haplotypes", haplotype_walks.len());
 
-            let grammar: Grammar = grammar.into_iter().map(|(name, u, v, _)| (name.get_undirected(), (u, v))).collect(); 
+            let grammar: Grammar = grammar
+                .into_iter()
+                .map(|(name, u, v, _)| (name.get_undirected(), (u, v)))
+                .collect();
             check_incompressibility(&haplotype_walks, &grammar, &node_registry);
 
             compare_file(&file, &haplotype_walks, &grammar, &node_registry);
@@ -127,7 +136,11 @@ fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar, node_regist
     for (_, rule) in grammar {
         let digram: CanonicalDigram = Digram::new(rule.0, rule.1).into();
         if !digrams.insert(digram.clone()) {
-            log::error!("Digram {:?} - {:?} seen twice in grammar", rev_node.get_directed_name(digram.0), rev_node.get_directed_name(digram.1));
+            log::error!(
+                "Digram {:?} - {:?} seen twice in grammar",
+                rev_node.get_directed_name(digram.0),
+                rev_node.get_directed_name(digram.1)
+            );
         }
         total_seen_digrams += 1;
     }
@@ -136,14 +149,21 @@ fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar, node_regist
         for (u, v) in walk.iter().tuple_windows() {
             let digram: CanonicalDigram = Digram::new(*u, *v).into();
             if !digrams.insert(digram.clone()) {
-                log::error!("Digram {:?} - {:?} seen twice", rev_node.get_directed_name(digram.0), rev_node.get_directed_name(digram.1));
+                log::error!(
+                    "Digram {:?} - {:?} seen twice",
+                    rev_node.get_directed_name(digram.0),
+                    rev_node.get_directed_name(digram.1)
+                );
             }
             total_seen_digrams += 1;
         }
     }
 
     if digrams.len() != total_seen_digrams {
-        log::error!("{} digrams seen multiple times", total_seen_digrams - digrams.len());
+        log::error!(
+            "{} digrams seen multiple times",
+            total_seen_digrams - digrams.len()
+        );
     } else {
         println!("Grammar and haplotypes cannot be compressed any further");
     }

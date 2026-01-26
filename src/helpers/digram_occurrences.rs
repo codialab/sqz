@@ -3,7 +3,7 @@ use std::{
     hash::{BuildHasherDefault, DefaultHasher},
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use crate::helpers::{
     utils::LocalizedDigram, AddressNumber, CanonicalDigram, DeterministicHashMap,
@@ -32,7 +32,7 @@ impl DigramOccurrences {
         for (digram, occurrences) in &self.inner {
             println!("{:?}: {:?}", digram, occurrences);
         }
-    } 
+    }
 
     pub fn total_len(&self) -> usize {
         self.into_iter().map(|(_, x)| x.len()).sum()
@@ -98,32 +98,44 @@ impl DigramOccurrences {
         let old_occurrence = self.inner[index].len();
         let mut has_deleted = false;
         if index.is_symmetric() {
-            self.neighbor_left.remove_occurrence(index, &value.flip(), false);
-            self.neighbor_right.remove_occurrence(index, &value.flip(), true);
-            if self.inner
+            self.neighbor_left
+                .remove_occurrence(index, &value.flip(), false);
+            self.neighbor_right
+                .remove_occurrence(index, &value.flip(), true);
+            if self
+                .inner
                 .get_mut(index)
-                .expect("DigramOccurrences needs to contain digram to remove one of its occurrences")
-                .remove(&value.flip()) {
-                    has_deleted = true;
+                .expect(
+                    "DigramOccurrences needs to contain digram to remove one of its occurrences",
+                )
+                .remove(&value.flip())
+            {
+                has_deleted = true;
             }
         }
         self.neighbor_left.remove_occurrence(index, value, false);
         self.neighbor_right.remove_occurrence(index, value, true);
         self.freq
             .change_frequency(index, old_occurrence, old_occurrence - 1);
-        if self.inner
+        if self
+            .inner
             .get_mut(index)
             .expect("DigramOccurrences needs to contain digram to remove one of its occurrences")
-            .remove(value) {
-                has_deleted = true;
+            .remove(value)
+        {
+            has_deleted = true;
         }
         if !has_deleted {
-            return Err(anyhow!("Cannot delete occurrence in DigramOccurrences.inner"));
+            return Err(anyhow!(
+                "Cannot delete occurrence in DigramOccurrences.inner"
+            ));
         }
         if self.inner[index].is_empty() {
             return match self.inner.remove(index) {
                 Some(_) => Ok(()),
-                None => Err(anyhow!("Cannot delete occurrence set in DigramOccurrences.inner")),
+                None => Err(anyhow!(
+                    "Cannot delete occurrence set in DigramOccurrences.inner"
+                )),
             };
         }
         Ok(())
@@ -318,7 +330,8 @@ mod tests {
         doc.delete_occurrence(
             &get_canonical_digram(),
             &Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
-        );
+        )
+        .expect("Can delete occurrence");
         assert_eq!(doc.inner.len(), 0);
         assert_eq!(doc.neighbor_left.inner.len(), 0);
         assert_eq!(doc.neighbor_right.inner.len(), 0);
