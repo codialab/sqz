@@ -1,7 +1,14 @@
 use crate::{
-    helpers::{utils::NodeId, PathSegment, ReverseNodeRegistry},
+    helpers::{utils::NodeId, DeterministicHashMap, PathSegment, ReverseNodeRegistry},
     Rule,
 };
+
+pub fn print_grammar_simple(rules: &DeterministicHashMap<NodeId, Vec<NodeId>>) {
+    for (meta_node, rule) in rules {
+        let rule_text: String = rule.iter().map(|n| n.to_string()).collect();
+        println!("Q\t{}\t{}", meta_node, rule_text);
+    }
+}
 
 pub fn print_grammar(grammar: &[Rule], node_registry: &ReverseNodeRegistry, print_addresses: bool) {
     for rule in grammar {

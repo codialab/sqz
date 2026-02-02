@@ -6,17 +6,22 @@ use itertools::Itertools;
 use std::{collections::HashSet, path::PathBuf};
 
 use crate::{
+    compressing::compress_remaining_file,
     decoding::decode_and_print_walks,
     encoding::get_haplotype_walks,
     grammar_building::{build_grammar, Rule},
     helpers::{
         utils::{CanonicalDigram, Digram, NodeId},
-        NodeRegistry, PathSegment, ReverseNodeRegistry,
+        DeterministicHashMap, NodeRegistry, PathSegment, ReverseNodeRegistry,
     },
-    parser::{compare_file, parse_file_to_digrams, parse_file_to_haplotypes_with_grammar, Grammar},
-    printing::{print_grammar, print_walks},
+    parser::{
+        compare_file, parse_file_to_digrams, parse_file_to_digrams_ratio_based,
+        parse_file_to_haplotypes_with_grammar, Grammar,
+    },
+    printing::{print_grammar, print_grammar_simple, print_walks},
 };
 
+mod compressing;
 mod decoding;
 mod encoding;
 mod grammar_building;
@@ -33,9 +38,10 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Compresses a GFA file
+    /// Compresses a GFA file by building the grammar on the full
+    /// number of paths
     #[command(arg_required_else_help = true)]
-    Compress {
+    CompressFull {
         /// Input GFA file
         #[arg(required = true)]
         file: PathBuf,
@@ -56,6 +62,23 @@ enum Commands {
         use_p_lines: bool,
     },
 
+    /// Compresses a GFA file by building the grammar from a subset
+    /// of paths.
+    #[command(arg_required_else_help = true)]
+    CompressPartial {
+        /// Input GFA file
+        #[arg(required = true)]
+        file: PathBuf,
+
+        /// Prefix that is used for non-terminal node identifiers
+        #[arg(short, long, default_value = "Q")]
+        prefix: String,
+
+        /// Ratio of paths used for the grammar building
+        #[arg(short, long, default_value = "0.5")]
+        ratio: f32,
+    },
+
     #[command(arg_required_else_help = true)]
     Test {
         #[arg(required = true)]
@@ -68,7 +91,7 @@ fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.command {
-        Commands::Compress { file, prefix: _ } => {
+        Commands::CompressFull { file, prefix: _ } => {
             log::info!("Compressing file {:?}", file);
             let (haplotypes, mut node_registry, singleton_haplotypes) =
                 parse_file_to_digrams(&file, true)?;
@@ -98,6 +121,42 @@ fn main() -> Result<()> {
                 parse_file_to_haplotypes_with_grammar(&file, true)?;
             let rev_reg: ReverseNodeRegistry = node_registry.into();
             decode_and_print_walks(haplotypes, &grammar, &rev_reg, use_p_lines);
+        }
+        Commands::CompressPartial {
+            file,
+            prefix: _,
+            ratio,
+        } => {
+            log::info!("Compressing file {:?}", file);
+            let (haplotypes, mut node_registry, singleton_haplotypes, compressed_paths) =
+                parse_file_to_digrams_ratio_based(&file, true, ratio)?;
+            let (haplotype_names, haplotypes): (Vec<PathSegment>, Vec<Vec<LocalizedDigram>>) =
+                haplotypes.into_iter().unzip();
+            let number_of_paths = haplotypes.len();
+            log::info!("Parsed {} haplotypes", number_of_paths);
+            let mut d = DigramOccurrences::from(haplotypes);
+            let grammar = build_grammar(&mut d, &mut node_registry);
+            let haplotype_walks =
+                get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
+            let grammar: DeterministicHashMap<NodeId, Vec<NodeId>> = grammar
+                .iter()
+                .map(|(k, v0, v1, _)| (*k, vec![*v0, *v1]))
+                .collect();
+            print_grammar_simple(&grammar);
+
+            let rev_reg: ReverseNodeRegistry = node_registry.clone().into();
+            for (digram, occurrences) in &d {
+                log::info!(
+                    "| {}{} -> {:?}",
+                    rev_reg.get_directed_name(digram.0),
+                    rev_reg.get_directed_name(digram.1),
+                    occurrences
+                );
+            }
+            print_walks(&haplotype_walks, &rev_reg, &haplotype_names);
+
+            // TODO: get remaining paths and compress
+            compress_remaining_file(&file, &grammar, &compressed_paths, &node_registry, &rev_reg)?;
         }
         Commands::Test { file } => {
             log::info!("Testing on file {:?}", file);

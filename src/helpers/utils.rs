@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Display};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct AddressNumber(pub u32);
@@ -149,6 +149,20 @@ impl NodeId {
 
     pub fn is_meta_node(&self) -> bool {
         self.0 .1
+    }
+}
+
+impl Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            match self.1 {
+                Orientation::Forward => ">",
+                Orientation::Backward => "<",
+            },
+            self.0 .0
+        )
     }
 }
 
