@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use aho_corasick::AhoCorasick;
 use anyhow::Result;
 
+use deepsize::DeepSizeOf;
+
 use crate::{
     helpers::{utils::NodeId, DeterministicHashMap, NodeRegistry, ReverseNodeRegistry},
     parser::{bufreader_from_compressed, parse_walk_seq_plainly, path_from_line, ByteLineReader},
@@ -10,30 +12,36 @@ use crate::{
 
 pub fn compress_remaining_file(
     file: &PathBuf,
-    rules: &DeterministicHashMap<NodeId, Vec<NodeId>>,
+    mut rules: DeterministicHashMap<NodeId, Vec<NodeId>>,
     compressed_paths: &[bool],
     node_reg: &NodeRegistry,
     rev_reg: &ReverseNodeRegistry,
 ) -> Result<()> {
-    let rules = unroll_rules(rules);
+    unroll_rules(&mut rules);
     log::info!("Unrolled all rules");
-    let lookup_table: DeterministicHashMap<Vec<NodeId>, NodeId> =
-        rules.iter().map(|(k, v)| (v.clone(), *k)).collect();
-    let mut patterns: Vec<String> = rules
-        .values()
-        .map(|v| v.iter().map(|n| (*n).to_string()).collect())
-        .collect();
-    // Add reverse-complement patterns
-    patterns.extend(
-        rules
-            .values()
-            .map(|v| v.iter().rev().map(|n| n.flip().to_string()).collect()),
-    );
-    let ac = AhoCorasick::builder()
-        .match_kind(aho_corasick::MatchKind::LeftmostLongest)
-        .build(&patterns)
-        .expect("Can build Aho-Corasick structure");
-    log::info!("Done with setting up Aho-Corasick data structures");
+    let mut lookup_table: DeterministicHashMap<Vec<NodeId>, NodeId> =
+        rules.into_iter().map(|(k, v)| (v, k)).collect();
+    lookup_table.shrink_to_fit();
+    log::info!("Created lookup table of size: {}", lookup_table.deep_size_of() as f64 / 1_000_000_000.0);
+    let ac = {
+        let mut patterns: Vec<String> = Vec::with_capacity(2 * lookup_table.len());
+        patterns.extend(lookup_table
+            .keys()
+            .map(|v| v.iter().map(|n| (*n).to_string()).collect())
+        );
+        // Add reverse-complement patterns
+        patterns.extend(
+            lookup_table
+                .keys()
+                .map(|v| v.iter().rev().map(|n| n.flip().to_string()).collect()),
+        );
+        let ac = AhoCorasick::builder()
+            .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+            .build(&patterns)
+            .expect("Can build Aho-Corasick structure");
+        ac
+    };
+    log::info!("Done with setting up Aho-Corasick data structures of size {} bytes ({} Gb)", ac.memory_usage(), ac.memory_usage() as f64 / 1_000_000_000.0);
 
     let data = bufreader_from_compressed(file)?;
     let line_reader = ByteLineReader::new(data);
@@ -52,28 +60,29 @@ pub fn compress_remaining_file(
             path_index += 1;
         }
     });
+    log::info!("Done with compressing remaining file");
     Ok(())
 }
 
 #[cfg(test)]
 fn compress(
     haplotypes: &[Vec<NodeId>],
-    rules: &DeterministicHashMap<NodeId, Vec<NodeId>>,
+    mut rules: DeterministicHashMap<NodeId, Vec<NodeId>>,
 ) -> Vec<String> {
-    let rules = unroll_rules(rules);
+    unroll_rules(&mut rules);
     log::info!("Unrolled all rules");
     let mut solutions = Vec::new();
     let lookup_table: DeterministicHashMap<Vec<NodeId>, NodeId> =
-        rules.iter().map(|(k, v)| (v.clone(), *k)).collect();
-    let mut patterns: Vec<String> = rules
-        .iter()
-        .map(|(_k, v)| v.iter().map(|n| (*n).to_string()).collect())
+        rules.into_iter().map(|(k, v)| (v, k)).collect();
+    let mut patterns: Vec<String> = lookup_table
+        .keys()
+        .map(|v| v.iter().map(|n| (*n).to_string()).collect())
         .collect();
     // Add reverse-complement patterns
     patterns.extend(
-        rules
-            .iter()
-            .map(|(_k, v)| v.iter().rev().map(|n| n.flip().to_string()).collect()),
+        lookup_table
+            .keys()
+            .map(|v| v.iter().rev().map(|n| n.flip().to_string()).collect()),
     );
     let ac = AhoCorasick::builder()
         .match_kind(aho_corasick::MatchKind::LeftmostLongest)
@@ -89,14 +98,12 @@ fn compress(
 
 // Unrolls rules so that no rule text contains meta-nodes
 fn unroll_rules(
-    rules: &DeterministicHashMap<NodeId, Vec<NodeId>>,
-) -> DeterministicHashMap<NodeId, Vec<NodeId>> {
-    let mut rules = rules.clone();
+    rules: &mut DeterministicHashMap<NodeId, Vec<NodeId>>,
+) {
     let keys: Vec<NodeId> = rules.keys().copied().collect();
     for meta_node in keys {
-        unroll_rule(&meta_node, &mut rules);
+        unroll_rule(&meta_node, rules);
     }
-    rules
 }
 
 fn unroll_rule(key: &NodeId, rules: &mut DeterministicHashMap<NodeId, Vec<NodeId>>) {
@@ -198,7 +205,7 @@ mod tests {
                 get_node(5, false, true),
             ],
         );
-        let res = compress(&vec![h], &rules);
+        let res = compress(&vec![h], rules);
         assert_eq!(res, vec![">8"]);
     }
 }

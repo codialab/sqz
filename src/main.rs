@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use deepsize::DeepSizeOf;
 use env_logger::Env;
 use helpers::{digram_occurrences::DigramOccurrences, utils::LocalizedDigram};
 use itertools::Itertools;
@@ -128,35 +129,30 @@ fn main() -> Result<()> {
             ratio,
         } => {
             log::info!("Compressing file {:?}", file);
-            let (haplotypes, mut node_registry, singleton_haplotypes, compressed_paths) =
-                parse_file_to_digrams_ratio_based(&file, true, ratio)?;
-            let (haplotype_names, haplotypes): (Vec<PathSegment>, Vec<Vec<LocalizedDigram>>) =
-                haplotypes.into_iter().unzip();
-            let number_of_paths = haplotypes.len();
-            log::info!("Parsed {} haplotypes", number_of_paths);
-            let mut d = DigramOccurrences::from(haplotypes);
-            let grammar = build_grammar(&mut d, &mut node_registry);
-            let haplotype_walks =
-                get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
-            let grammar: DeterministicHashMap<NodeId, Vec<NodeId>> = grammar
-                .iter()
-                .map(|(k, v0, v1, _)| (*k, vec![*v0, *v1]))
-                .collect();
-            print_grammar_simple(&grammar);
+            let (grammar, compressed_paths, node_registry, rev_reg) = {
+                let (haplotypes, mut node_registry, singleton_haplotypes, compressed_paths) =
+                    parse_file_to_digrams_ratio_based(&file, true, ratio)?;
+                let (haplotype_names, haplotypes): (Vec<PathSegment>, Vec<Vec<LocalizedDigram>>) =
+                    haplotypes.into_iter().unzip();
+                let number_of_paths = haplotypes.len();
+                log::info!("Parsed {} haplotypes", number_of_paths);
+                let mut d = DigramOccurrences::from(haplotypes);
+                let grammar = build_grammar(&mut d, &mut node_registry);
+                let haplotype_walks =
+                    get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
+                let grammar: DeterministicHashMap<NodeId, Vec<NodeId>> = grammar
+                    .into_iter()
+                    .map(|(k, v0, v1, _)| (k, vec![v0, v1]))
+                    .collect();
+                print_grammar_simple(&grammar);
 
-            let rev_reg: ReverseNodeRegistry = node_registry.clone().into();
-            for (digram, occurrences) in &d {
-                log::info!(
-                    "| {}{} -> {:?}",
-                    rev_reg.get_directed_name(digram.0),
-                    rev_reg.get_directed_name(digram.1),
-                    occurrences
-                );
-            }
-            print_walks(&haplotype_walks, &rev_reg, &haplotype_names);
+                let rev_reg: ReverseNodeRegistry = node_registry.clone().into();
+                print_walks(&haplotype_walks, &rev_reg, &haplotype_names);
+                (grammar, compressed_paths, node_registry, rev_reg)
+            };
 
-            // TODO: get remaining paths and compress
-            compress_remaining_file(&file, &grammar, &compressed_paths, &node_registry, &rev_reg)?;
+            log::info!("Created registries of size {} and {}", node_registry.deep_size_of() as f64 / 1e9, rev_reg.deep_size_of() as f64 / 1e9);
+            compress_remaining_file(&file, grammar, &compressed_paths, &node_registry, &rev_reg)?;
         }
         Commands::Test { file } => {
             log::info!("Testing on file {:?}", file);

@@ -8,3 +8,4 @@
 /vendor
 *.zst
 massif.out.*
+dhat.out.*

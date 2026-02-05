@@ -1,5 +1,7 @@
 use std::fmt::{self, Display};
 
+use deepsize::DeepSizeOf;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct AddressNumber(pub u32);
 
@@ -65,7 +67,7 @@ impl Address {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, DeepSizeOf)]
 pub enum Orientation {
     Forward,
     Backward,
@@ -102,7 +104,7 @@ impl Orientation {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, DeepSizeOf)]
 pub struct UndirectedNodeId(pub u32, pub bool);
 
 impl UndirectedNodeId {
@@ -119,7 +121,7 @@ impl UndirectedNodeId {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, DeepSizeOf)]
 pub struct NodeId(pub UndirectedNodeId, pub Orientation);
 
 impl NodeId {

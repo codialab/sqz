@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use deepsize::DeepSizeOf;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::mem;
 use std::str::FromStr;
@@ -25,7 +26,7 @@ static PATHID_PANSN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^([^#]+)(#[^#]+)?(#[^#].*)?$").unwrap());
 static PATHID_COORDS: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):([0-9]+)-([0-9]+)$").unwrap());
 
-#[derive(Debug)]
+#[derive(Debug, DeepSizeOf)]
 pub struct ReverseNodeRegistry {
     inner: DeterministicHashMap<UndirectedNodeId, Vec<u8>>,
 }
@@ -52,7 +53,7 @@ impl ReverseNodeRegistry {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, DeepSizeOf)]
 pub struct NodeRegistry {
     inner: DeterministicHashMap<Vec<u8>, UndirectedNodeId>,
     prefix: Vec<u8>,
