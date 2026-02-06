@@ -22,6 +22,7 @@ use crate::{
     printing::{print_grammar, print_grammar_simple, print_walks},
 };
 
+mod aho_corasick;
 mod compressing;
 mod decoding;
 mod encoding;
@@ -151,7 +152,11 @@ fn main() -> Result<()> {
                 (grammar, compressed_paths, node_registry, rev_reg)
             };
 
-            log::info!("Created registries of size {} and {}", node_registry.deep_size_of() as f64 / 1e9, rev_reg.deep_size_of() as f64 / 1e9);
+            log::info!(
+                "Created registries of size {} and {}",
+                node_registry.deep_size_of() as f64 / 1e9,
+                rev_reg.deep_size_of() as f64 / 1e9
+            );
             compress_remaining_file(&file, grammar, &compressed_paths, &node_registry, &rev_reg)?;
         }
         Commands::Test { file } => {

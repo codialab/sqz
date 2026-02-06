@@ -24,11 +24,11 @@ lazy_static! {
 
 type NamedPath = Vec<(PathSegment, Vec<LocalizedDigram>)>;
 
-pub struct ByteLineReader<R: io::Read> {
+pub struct ByteLineReader<R: io::Read + Send> {
     data: io::BufReader<R>,
 }
 
-impl<R: io::Read> ByteLineReader<R> {
+impl<R: io::Read + Send> ByteLineReader<R> {
     pub fn new(data: R) -> Self {
         Self {
             data: BufReader::new(data),
@@ -36,7 +36,7 @@ impl<R: io::Read> ByteLineReader<R> {
     }
 }
 
-impl<R: io::Read> Iterator for ByteLineReader<R> {
+impl<R: io::Read + Send> Iterator for ByteLineReader<R> {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -52,10 +52,10 @@ impl<R: io::Read> Iterator for ByteLineReader<R> {
     }
 }
 
-pub fn bufreader_from_compressed(file: &PathBuf) -> Result<io::BufReader<Box<dyn Read>>> {
+pub fn bufreader_from_compressed(file: &PathBuf) -> Result<io::BufReader<Box<dyn Read + Send>>> {
     let f = std::fs::File::open(file)?;
     if let Some(name) = file.file_name() {
-        let reader: Box<dyn Read> = if name.to_str().unwrap().ends_with(".gz") {
+        let reader: Box<dyn Read + Send> = if name.to_str().unwrap().ends_with(".gz") {
             log::info!("assuming that {} is gzip compressed..", file.display());
             Box::new(MultiGzDecoder::new(f))
         } else {
@@ -77,7 +77,7 @@ pub fn compare_file(
     compare_file_content(data, walks, grammar, node_ids_by_name);
 }
 
-fn compare_file_content<R: Read>(
+fn compare_file_content<R: Read + Send>(
     reader: R,
     walks: &[Vec<NodeId>],
     grammar: &Grammar,
@@ -209,7 +209,7 @@ pub fn get_digrams_from_haplotype(haplotype: &[NodeId]) -> DigramPath {
 
 type Path = (PathSegment, Vec<NodeId>);
 
-fn parse_file_content_to_digrams<R: Read>(
+fn parse_file_content_to_digrams<R: Read + Send>(
     reader: R,
     node_ids_by_name: NodeRegistry,
     should_print_other_lines: bool,
@@ -241,7 +241,7 @@ fn parse_file_content_to_digrams<R: Read>(
     Ok((haplotypes, node_ids_by_name, monogram_paths))
 }
 
-fn parse_file_content_to_haplotypes<R: Read>(
+fn parse_file_content_to_haplotypes<R: Read + Send>(
     reader: R,
     node_ids_by_name: NodeRegistry,
     should_print_other_lines: bool,
