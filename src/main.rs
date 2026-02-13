@@ -125,6 +125,7 @@ fn main() -> Result<()> {
             log::info!("Parsed {} haplotypes", number_of_paths);
             let mut d = DigramOccurrences::from(haplotypes);
             let grammar = build_grammar(&mut d, &mut node_registry);
+            d.log_sizes();
             let rev_reg: ReverseNodeRegistry = node_registry.into();
             print_grammar(&grammar, &rev_reg, false);
             let haplotype_walks =

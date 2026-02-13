@@ -104,9 +104,15 @@ fn build_rule(
 
 pub fn build_grammar(d: &mut DigramOccurrences, node_registry: &mut NodeRegistry) -> Vec<Rule> {
     let mut rules: Vec<Rule> = Vec::new();
+    let mut counter = 0;
     while let Some(uv) = d.get_most_frequent(2) {
         log::debug!("Building rule: {:?}", uv);
         rules.push(build_rule(uv, d, node_registry));
+        counter += 1;
+        if counter >= 500 {
+            counter = 0;
+            d.shrink();
+        }
     }
     rules
 }

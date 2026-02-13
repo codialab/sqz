@@ -336,6 +336,10 @@ impl Freq {
         self.insert(digram.clone(), new_occurrence);
     }
 
+    pub fn shrink(&mut self) {
+        self.inner.shrink_to_fit();
+    }
+
     pub fn remove(&mut self, digram: &CanonicalDigram, number_of_occurrences: usize) {
         self.inner
             .get_mut(number_of_occurrences - 1)
@@ -362,6 +366,104 @@ impl Freq {
         let elt = self.inner.last()?.iter().next().cloned();
         elt
     }
+}
+
+#[derive(Clone, Debug, DeepSizeOf)]
+pub struct Neighbors {
+    left: NeighborList,
+    right: NeighborList,
+}
+
+impl Neighbors {
+    pub fn new() -> Self {
+        Self {
+            left: NeighborList::new(),
+            right: NeighborList::new(),
+        }
+    }
+
+    pub fn get_value(
+        &self,
+        side: Side,
+        node: NodeId,
+        haplotype: usize,
+        address_number: AddressNumber,
+    ) -> Option<(NodeId, AddressNumber)> {
+        match side {
+            Side::Left => self.left.get_value(node, haplotype, address_number),
+            Side::Right => self.right.get_value(node, haplotype, address_number),
+        }
+    }
+
+    pub fn insert(&mut self, side: Side, key: (NodeId, usize, AddressNumber), value: (NodeId, AddressNumber)) {
+        match side {
+            Side::Left => self.left.insert(key, value),
+            Side::Right => self.right.insert(key, value),
+        }
+    }
+
+    pub fn shrink(&mut self) {
+        self.left.shrink();
+        self.right.shrink();
+    }
+
+    pub fn remove_occurrence(
+        &mut self,
+        side: Side,
+        digram: &CanonicalDigram,
+        occurrence: &Occurrence,
+        is_right_side: bool,
+    ) {
+        match side {
+            Side::Left => self.left.remove_occurrence(digram, occurrence, is_right_side),
+            Side::Right => self.right.remove_occurrence(digram, occurrence, is_right_side),
+        }
+    }
+
+    pub fn remove_occurrences(
+        &mut self,
+        side: Side,
+        digram: &CanonicalDigram,
+        occurrences: &HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
+        is_right_side: bool,
+    ) {
+        match side {
+            Side::Left => self.left.remove_occurrences(digram, occurrences, is_right_side),
+            Side::Right => self.right.remove_occurrences(digram, occurrences, is_right_side),
+        }
+    }
+
+    pub fn insert_occurrence(
+        &mut self,
+        side: Side,
+        digram: &CanonicalDigram,
+        occurrence: Occurrence,
+        is_right_side: bool,
+    ) {
+        match side {
+            Side::Left => self.left.insert_occurrence(digram, occurrence, is_right_side),
+            Side::Right => self.right.insert_occurrence(digram, occurrence, is_right_side),
+        }
+    }
+
+    pub fn insert_values(
+        &mut self,
+        side: Side,
+        digram: &CanonicalDigram,
+        occurrences: Vec<Occurrence>,
+        is_right_side: bool,
+    ) {
+        match side {
+            Side::Left => self.left.insert_values(digram, occurrences, is_right_side),
+            Side::Right => self.right.insert_values(digram, occurrences, is_right_side),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, DeepSizeOf, PartialEq, Eq)]
+pub enum Side {
+    Left,
+    Right
 }
 
 #[derive(Clone, Debug, DeepSizeOf)]
@@ -393,6 +495,10 @@ impl NeighborList {
         let rev_key = (value.0.flip(), key.1, value.1);
         let rev_value = (key.0.flip(), key.2);
         self.inner.insert(rev_key, rev_value);
+    }
+
+    pub fn shrink(&mut self) {
+        self.inner.shrink_to_fit();
     }
 
     pub fn remove(&mut self, key: (NodeId, usize, AddressNumber), value: (NodeId, AddressNumber)) {

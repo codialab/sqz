@@ -7,15 +7,13 @@ use anyhow::{anyhow, Result};
 use deepsize::DeepSizeOf;
 
 use crate::helpers::{
-    utils::LocalizedDigram, AddressNumber, CanonicalDigram, DeterministicHashMap,
-    DeterministicHashSet, Freq, NeighborList, NodeId, Occurrence,
+    AddressNumber, CanonicalDigram, DeterministicHashMap, DeterministicHashSet, Freq, Neighbors, NodeId, Occurrence, Side, utils::LocalizedDigram
 };
 
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct DigramOccurrences {
     inner: DeterministicHashMap<CanonicalDigram, DeterministicHashSet<Occurrence>>,
-    neighbor_left: NeighborList,
-    neighbor_right: NeighborList,
+    neighbors: Neighbors,
     freq: Freq,
 }
 
@@ -23,8 +21,7 @@ impl DigramOccurrences {
     pub fn new() -> Self {
         Self {
             inner: DeterministicHashMap::default(),
-            neighbor_left: NeighborList::new(),
-            neighbor_right: NeighborList::new(),
+            neighbors: Neighbors::new(),
             freq: Freq::new(),
         }
     }
@@ -49,6 +46,20 @@ impl DigramOccurrences {
         self.contains(k) && self.inner[k].contains(o)
     }
 
+    pub fn shrink(&mut self) {
+        self.inner.shrink_to_fit();
+        self.neighbors.shrink();
+        self.freq.shrink();
+    }
+
+    pub fn log_sizes(&self) {
+        log::info!("DigramOccurrences with {} occurrences (inner: {}MB, neighbors: {}MB, freq: {}MB)",
+        self.total_len(),
+        self.inner.deep_size_of() / 1_000_000,
+        self.neighbors.deep_size_of() / 1_000_000,
+        self.freq.deep_size_of() / 1_000_000);
+    }
+
     pub fn from(haplotypes: Vec<Vec<LocalizedDigram>>) -> Self {
         let mut d = Self::new();
 
@@ -56,11 +67,13 @@ impl DigramOccurrences {
             for local_digram in haplotype {
                 let (digram, address) = local_digram.split_to_canonical();
                 d.insert(&digram, Occurrence::new(i, address));
-                d.neighbor_right.insert(
+                d.neighbors.insert(
+                    Side::Right,
                     (digram.get_u(), i, address.get_first()),
                     (digram.get_v(), address.get_second()),
                 );
-                d.neighbor_left.insert(
+                d.neighbors.insert(
+                    Side::Left,
                     (digram.get_v(), i, address.get_second()),
                     (digram.get_u(), address.get_first()),
                 );
@@ -68,12 +81,8 @@ impl DigramOccurrences {
         }
 
         d.freq = d.get_freq();
-        log::info!("Created DigramOccurrences with {} occurrences (inner: {}MB, left: {}MB, right: {}MB, freq: {}MB)",
-        d.total_len(),
-        d.inner.deep_size_of() / 1_000_000,
-        d.neighbor_left.deep_size_of() / 1_000_000,
-        d.neighbor_right.deep_size_of() / 1_000_000,
-        d.freq.deep_size_of() / 1_000_000);
+        d.shrink();
+        d.log_sizes();
         d
     }
 
@@ -87,17 +96,17 @@ impl DigramOccurrences {
             .expect("DigramOccurrences needs to contain a digram to remove it");
         let frequency = occurrences.len();
         self.freq.remove(index, frequency);
-        self.neighbor_left
-            .remove_occurrences(index, &occurrences, false);
-        self.neighbor_right
-            .remove_occurrences(index, &occurrences, true);
+        self.neighbors
+            .remove_occurrences(Side::Left, index, &occurrences, false);
+        self.neighbors
+            .remove_occurrences(Side::Right, index, &occurrences, true);
         occurrences
     }
 
     #[cfg(test)]
     pub fn are_neighbors_equal(&self) -> bool {
-        self.neighbor_left.inner.iter().all(|(k, v)| {
-            self.neighbor_right.inner.contains_key(k) && self.neighbor_right.inner[k] == *v
+        self.neighbors.left.inner.iter().all(|(k, v)| {
+            self.neighbors.right.inner.contains_key(k) && self.neighbors.right.inner[k] == *v
         })
     }
 
@@ -105,10 +114,10 @@ impl DigramOccurrences {
         let old_occurrence = self.inner[index].len();
         let mut has_deleted = false;
         if index.is_symmetric() {
-            self.neighbor_left
-                .remove_occurrence(index, &value.flip(), false);
-            self.neighbor_right
-                .remove_occurrence(index, &value.flip(), true);
+            self.neighbors
+                .remove_occurrence(Side::Left, index, &value.flip(), false);
+            self.neighbors
+                .remove_occurrence(Side::Right, index, &value.flip(), true);
             if self
                 .inner
                 .get_mut(index)
@@ -120,8 +129,8 @@ impl DigramOccurrences {
                 has_deleted = true;
             }
         }
-        self.neighbor_left.remove_occurrence(index, value, false);
-        self.neighbor_right.remove_occurrence(index, value, true);
+        self.neighbors.remove_occurrence(Side::Left, index, value, false);
+        self.neighbors.remove_occurrence(Side::Right, index, value, true);
         self.freq
             .change_frequency(index, old_occurrence, old_occurrence - 1);
         if self
@@ -159,18 +168,18 @@ impl DigramOccurrences {
             return;
         }
         self.freq.insert(index.clone(), values.len());
-        self.neighbor_left
-            .insert_values(index, values.iter().cloned().collect(), false);
-        self.neighbor_right
-            .insert_values(index, values.iter().cloned().collect(), true);
+        self.neighbors
+            .insert_values(Side::Left, index, values.iter().cloned().collect(), false);
+        self.neighbors
+            .insert_values(Side::Right, index, values.iter().cloned().collect(), true);
         self.inner.insert(index.clone(), values);
     }
 
     pub fn add_occurrence(&mut self, index: &CanonicalDigram, value: Occurrence) {
-        self.neighbor_left
-            .insert_occurrence(index, value.clone(), false);
-        self.neighbor_right
-            .insert_occurrence(index, value.clone(), true);
+        self.neighbors
+            .insert_occurrence(Side::Left, index, value.clone(), false);
+        self.neighbors
+            .insert_occurrence(Side::Right, index, value.clone(), true);
         if self.inner.contains_key(index) {
             let old_occurrence = self.inner[index].len();
             self.freq
@@ -189,8 +198,8 @@ impl DigramOccurrences {
         let node_id = index.get_u();
         let haplotype_id = value.0;
         let address_number = value.1 .0;
-        self.neighbor_left
-            .get_value(node_id, haplotype_id as usize, address_number)
+        self.neighbors
+            .get_value(Side::Left, node_id, haplotype_id as usize, address_number)
     }
 
     pub fn get_right_neighbor(
@@ -201,8 +210,8 @@ impl DigramOccurrences {
         let node_id = index.get_v();
         let haplotype_id = value.0;
         let address_number = value.1 .1;
-        self.neighbor_right
-            .get_value(node_id, haplotype_id as usize, address_number)
+        self.neighbors
+            .get_value(Side::Right, node_id, haplotype_id as usize, address_number)
     }
 
     pub fn get_most_frequent(&self, minimum_freq: usize) -> Option<CanonicalDigram> {
@@ -293,8 +302,8 @@ mod tests {
             Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
         );
         assert_eq!(doc.inner.len(), 1);
-        assert_eq!(doc.neighbor_left.inner.len(), 0);
-        assert_eq!(doc.neighbor_right.inner.len(), 0);
+        assert_eq!(doc.neighbors.left.inner.len(), 0);
+        assert_eq!(doc.neighbors.right.inner.len(), 0);
         assert_eq!(doc.freq.inner.len(), 0);
     }
 
@@ -316,8 +325,8 @@ mod tests {
             Address(AddressNumber(0), AddressNumber(1)),
         )]]);
         assert_eq!(doc.inner.len(), 1);
-        assert_eq!(doc.neighbor_left.inner.len(), 2);
-        assert_eq!(doc.neighbor_right.inner.len(), 2);
+        assert_eq!(doc.neighbors.left.inner.len(), 2);
+        assert_eq!(doc.neighbors.right.inner.len(), 2);
         assert_eq!(doc.freq.inner.len(), 1);
     }
 
@@ -326,8 +335,8 @@ mod tests {
         let mut doc = get_doc();
         doc.remove_digram(&get_canonical_digram());
         assert_eq!(doc.inner.len(), 0);
-        assert_eq!(doc.neighbor_left.inner.len(), 0);
-        assert_eq!(doc.neighbor_right.inner.len(), 0);
+        assert_eq!(doc.neighbors.left.inner.len(), 0);
+        assert_eq!(doc.neighbors.right.inner.len(), 0);
         assert_eq!(doc.freq.inner.len(), 0);
     }
 
@@ -340,8 +349,8 @@ mod tests {
         )
         .expect("Can delete occurrence");
         assert_eq!(doc.inner.len(), 0);
-        assert_eq!(doc.neighbor_left.inner.len(), 0);
-        assert_eq!(doc.neighbor_right.inner.len(), 0);
+        assert_eq!(doc.neighbors.left.inner.len(), 0);
+        assert_eq!(doc.neighbors.right.inner.len(), 0);
         assert_eq!(doc.freq.inner.len(), 0);
     }
 
@@ -352,8 +361,8 @@ mod tests {
         occurrences.insert(Occurrence(0, Address(AddressNumber(0), AddressNumber(1))));
         doc.add_digram(&get_canonical_digram(), occurrences);
         assert_eq!(doc.inner.len(), 1);
-        assert_eq!(doc.neighbor_left.inner.len(), 2);
-        assert_eq!(doc.neighbor_right.inner.len(), 2);
+        assert_eq!(doc.neighbors.left.inner.len(), 2);
+        assert_eq!(doc.neighbors.right.inner.len(), 2);
         assert_eq!(doc.freq.inner.len(), 1);
     }
 
@@ -365,8 +374,8 @@ mod tests {
             Occurrence(0, Address(AddressNumber(0), AddressNumber(1))),
         );
         assert_eq!(doc.inner.len(), 1);
-        assert_eq!(doc.neighbor_left.inner.len(), 2);
-        assert_eq!(doc.neighbor_right.inner.len(), 2);
+        assert_eq!(doc.neighbors.left.inner.len(), 2);
+        assert_eq!(doc.neighbors.right.inner.len(), 2);
         assert_eq!(doc.freq.inner.len(), 1);
     }
 
