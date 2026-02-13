@@ -47,10 +47,10 @@ impl<T: Hash + Eq + Clone + Debug> AhoCorasick<T> {
         ac
     }
 
-    fn insert(&mut self, pattern: &Vec<T>, id: &T) {
+    fn insert(&mut self, pattern: &[T], id: &T) {
         let mut curr = 0;
         let pattern_length = pattern.len();
-        let iter = pattern.into_iter();
+        let iter = pattern.iter();
 
         for token in iter {
             if self.nodes[curr].next_node.contains_key(token) {

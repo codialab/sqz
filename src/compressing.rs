@@ -34,8 +34,8 @@ pub fn compress_remaining_file(
                 ]
             })
             .collect();
-        let ac = AhoCorasick::new(&patterns);
-        ac
+
+        AhoCorasick::new(&patterns)
     };
     log::info!(
         "Done with setting up Aho-Corasick data structure with {} states",
@@ -93,8 +93,8 @@ pub fn compress(
                 ]
             })
             .collect();
-        let ac = AhoCorasick::new(&patterns);
-        ac
+
+        AhoCorasick::new(&patterns)
     };
     log::info!(
         "Done with setting up Aho-Corasick data structure with {} states",
@@ -143,7 +143,7 @@ fn unroll_rule(key: &NodeId, rules: &mut DeterministicHashMap<NodeId, Vec<NodeId
 
 fn compress_haplotype(haplotype: Vec<NodeId>, ac: &AhoCorasick<NodeId>) -> Vec<NodeId> {
     let matches = ac.find_all(&haplotype);
-    let mut text = haplotype.into_iter().map(|n| Some(n)).collect_vec();
+    let mut text = haplotype.into_iter().map(Some).collect_vec();
     for Match {
         pattern_id,
         pattern_range,
@@ -152,8 +152,8 @@ fn compress_haplotype(haplotype: Vec<NodeId>, ac: &AhoCorasick<NodeId>) -> Vec<N
         let start = pattern_range.start;
         let end = pattern_range.end;
         text[start] = Some(pattern_id);
-        for i in start + 1..end {
-            text[i] = None;
+        for entry in text.iter_mut().take(end).skip(start + 1) {
+            *entry = None;
         }
     }
     let text: Vec<NodeId> = text.into_iter().flatten().collect();

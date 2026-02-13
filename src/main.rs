@@ -129,10 +129,8 @@ fn main() -> Result<()> {
             print_grammar(&grammar, &rev_reg, false);
             let haplotype_walks =
                 get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
-            let named_haplotypes: Vec<(PathSegment, Vec<NodeId>)> = haplotype_names
-                .into_iter()
-                .zip(haplotype_walks.into_iter())
-                .collect();
+            let named_haplotypes: Vec<(PathSegment, Vec<NodeId>)> =
+                haplotype_names.into_iter().zip(haplotype_walks).collect();
             print_walks(&named_haplotypes, &rev_reg);
         }
         Commands::Decompress { file, use_p_lines } => {
@@ -166,10 +164,8 @@ fn main() -> Result<()> {
                 let rev_reg: ReverseNodeRegistry = node_registry.clone().into();
                 print_grammar_simple(&grammar, &rev_reg);
 
-                let named_haplotypes: Vec<(PathSegment, Vec<NodeId>)> = haplotype_names
-                    .into_iter()
-                    .zip(haplotype_walks.into_iter())
-                    .collect();
+                let named_haplotypes: Vec<(PathSegment, Vec<NodeId>)> =
+                    haplotype_names.into_iter().zip(haplotype_walks).collect();
                 print_walks(&named_haplotypes, &rev_reg);
                 (grammar, compressed_paths, node_registry, rev_reg)
             };
