@@ -368,15 +368,11 @@ impl Freq {
     }
 }
 
+type NeighborEntry = Option<(NodeId, AddressNumber)>;
+
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Neighbors {
-    inner: HashMap<
-        (usize, AddressNumber),
-        (
-            Option<(NodeId, AddressNumber)>,
-            Option<(NodeId, AddressNumber)>,
-        ),
-    >,
+    inner: HashMap<(usize, AddressNumber), (NeighborEntry, NeighborEntry)>,
 }
 
 impl Neighbors {
@@ -399,23 +395,23 @@ impl Neighbors {
                 if node.is_forward() {
                     self.inner
                         .get(&(haplotype, address_number))
-                        .map_or(None, |v| v.0)
+                        .and_then(|v| v.0)
                 // Else return reversed right results of the forwards node
                 } else {
                     self.inner
                         .get(&(haplotype, address_number))
-                        .map_or(None, |v| v.1.map(|(n, a)| (n.flip(), a)))
+                        .and_then(|v| v.1.map(|(n, a)| (n.flip(), a)))
                 }
             }
             Side::Right => {
                 if node.is_forward() {
                     self.inner
                         .get(&(haplotype, address_number))
-                        .map_or(None, |v| v.1)
+                        .and_then(|v| v.1)
                 } else {
                     self.inner
                         .get(&(haplotype, address_number))
-                        .map_or(None, |v| v.0.map(|(n, a)| (n.flip(), a)))
+                        .and_then(|v| v.0.map(|(n, a)| (n.flip(), a)))
                 }
             }
         }
@@ -454,7 +450,7 @@ impl Neighbors {
                 // Insert forward edge
                 if key.0.is_forward() {
                     let first_key = (key.1, key.2);
-                    if self.inner.get(&first_key).is_some() && self.inner[&first_key].0.is_some() {
+                    if self.inner.contains_key(&first_key) && self.inner[&first_key].0.is_some() {
                         panic!(
                             "L: We are overwriting {:?} of {:?} with {:?}",
                             key,
@@ -469,8 +465,7 @@ impl Neighbors {
                 if value.0.flip().is_forward() {
                     let second_key = (key.1, value.1);
                     let second_value = (key.0.flip(), key.2);
-                    if self.inner.get(&second_key).is_some() && self.inner[&second_key].0.is_some()
-                    {
+                    if self.inner.contains_key(&second_key) && self.inner[&second_key].0.is_some() {
                         panic!(
                             "LRev: We are overwriting {:?} of {:?} with {:?}",
                             key,
@@ -485,7 +480,7 @@ impl Neighbors {
                 // Insert forward edge
                 if key.0.is_forward() {
                     let first_key = (key.1, key.2);
-                    if self.inner.get(&first_key).is_some() && self.inner[&first_key].1.is_some() {
+                    if self.inner.contains_key(&first_key) && self.inner[&first_key].1.is_some() {
                         panic!(
                             "R: We are overwriting {:?} of {:?} with {:?}",
                             key,
@@ -500,8 +495,7 @@ impl Neighbors {
                 if value.0.flip().is_forward() {
                     let second_key = (key.1, value.1);
                     let second_value = (key.0.flip(), key.2);
-                    if self.inner.get(&second_key).is_some() && self.inner[&second_key].1.is_some()
-                    {
+                    if self.inner.contains_key(&second_key) && self.inner[&second_key].1.is_some() {
                         panic!(
                             "RRev: We are overwriting {:?} of {:?} with {:?}",
                             key,
