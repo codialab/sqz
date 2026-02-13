@@ -370,108 +370,16 @@ impl Freq {
 
 #[derive(Clone, Debug, DeepSizeOf)]
 pub struct Neighbors {
-    left: NeighborList,
-    right: NeighborList,
+    inner: HashMap<
+        (usize, AddressNumber),
+        (
+            Option<(NodeId, AddressNumber)>,
+            Option<(NodeId, AddressNumber)>,
+        ),
+    >,
 }
 
 impl Neighbors {
-    pub fn new() -> Self {
-        Self {
-            left: NeighborList::new(),
-            right: NeighborList::new(),
-        }
-    }
-
-    pub fn get_value(
-        &self,
-        side: Side,
-        node: NodeId,
-        haplotype: usize,
-        address_number: AddressNumber,
-    ) -> Option<(NodeId, AddressNumber)> {
-        match side {
-            Side::Left => self.left.get_value(node, haplotype, address_number),
-            Side::Right => self.right.get_value(node, haplotype, address_number),
-        }
-    }
-
-    pub fn insert(&mut self, side: Side, key: (NodeId, usize, AddressNumber), value: (NodeId, AddressNumber)) {
-        match side {
-            Side::Left => self.left.insert(key, value),
-            Side::Right => self.right.insert(key, value),
-        }
-    }
-
-    pub fn shrink(&mut self) {
-        self.left.shrink();
-        self.right.shrink();
-    }
-
-    pub fn remove_occurrence(
-        &mut self,
-        side: Side,
-        digram: &CanonicalDigram,
-        occurrence: &Occurrence,
-        is_right_side: bool,
-    ) {
-        match side {
-            Side::Left => self.left.remove_occurrence(digram, occurrence, is_right_side),
-            Side::Right => self.right.remove_occurrence(digram, occurrence, is_right_side),
-        }
-    }
-
-    pub fn remove_occurrences(
-        &mut self,
-        side: Side,
-        digram: &CanonicalDigram,
-        occurrences: &HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
-        is_right_side: bool,
-    ) {
-        match side {
-            Side::Left => self.left.remove_occurrences(digram, occurrences, is_right_side),
-            Side::Right => self.right.remove_occurrences(digram, occurrences, is_right_side),
-        }
-    }
-
-    pub fn insert_occurrence(
-        &mut self,
-        side: Side,
-        digram: &CanonicalDigram,
-        occurrence: Occurrence,
-        is_right_side: bool,
-    ) {
-        match side {
-            Side::Left => self.left.insert_occurrence(digram, occurrence, is_right_side),
-            Side::Right => self.right.insert_occurrence(digram, occurrence, is_right_side),
-        }
-    }
-
-    pub fn insert_values(
-        &mut self,
-        side: Side,
-        digram: &CanonicalDigram,
-        occurrences: Vec<Occurrence>,
-        is_right_side: bool,
-    ) {
-        match side {
-            Side::Left => self.left.insert_values(digram, occurrences, is_right_side),
-            Side::Right => self.right.insert_values(digram, occurrences, is_right_side),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, DeepSizeOf, PartialEq, Eq)]
-pub enum Side {
-    Left,
-    Right
-}
-
-#[derive(Clone, Debug, DeepSizeOf)]
-pub struct NeighborList {
-    inner: HashMap<(NodeId, usize, AddressNumber), (NodeId, AddressNumber)>,
-}
-
-impl NeighborList {
     pub fn new() -> Self {
         Self {
             inner: HashMap::new(),
@@ -480,107 +388,257 @@ impl NeighborList {
 
     pub fn get_value(
         &self,
+        side: Side,
         node: NodeId,
         haplotype: usize,
         address_number: AddressNumber,
     ) -> Option<(NodeId, AddressNumber)> {
-        self.inner.get(&(node, haplotype, address_number)).cloned()
+        match side {
+            Side::Left => {
+                // If left forwards node is requested simply return it
+                if node.is_forward() {
+                    self.inner
+                        .get(&(haplotype, address_number))
+                        .map_or(None, |v| v.0)
+                // Else return reversed right results of the forwards node
+                } else {
+                    self.inner
+                        .get(&(haplotype, address_number))
+                        .map_or(None, |v| v.1.map(|(n, a)| (n.flip(), a)))
+                }
+            }
+            Side::Right => {
+                if node.is_forward() {
+                    self.inner
+                        .get(&(haplotype, address_number))
+                        .map_or(None, |v| v.1)
+                } else {
+                    self.inner
+                        .get(&(haplotype, address_number))
+                        .map_or(None, |v| v.0.map(|(n, a)| (n.flip(), a)))
+                }
+            }
+        }
     }
 
-    pub fn insert(&mut self, key: (NodeId, usize, AddressNumber), value: (NodeId, AddressNumber)) {
-        // Insert forward edge
-        self.inner.insert(key, value);
+    #[cfg(test)]
+    pub fn left_len(&self) -> usize {
+        let mut count = 0;
+        for v in self.inner.values() {
+            if v.0.is_some() {
+                count += 1;
+            }
+        }
+        count
+    }
 
-        // Insert reverse edge
-        let rev_key = (value.0.flip(), key.1, value.1);
-        let rev_value = (key.0.flip(), key.2);
-        self.inner.insert(rev_key, rev_value);
+    #[cfg(test)]
+    pub fn right_len(&self) -> usize {
+        let mut count = 0;
+        for v in self.inner.values() {
+            if v.1.is_some() {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    pub fn insert(
+        &mut self,
+        side: Side,
+        key: (NodeId, usize, AddressNumber),
+        value: (NodeId, AddressNumber),
+    ) {
+        match side {
+            Side::Left => {
+                // Insert forward edge
+                if key.0.is_forward() {
+                    let first_key = (key.1, key.2);
+                    if self.inner.get(&first_key).is_some() && self.inner[&first_key].0.is_some() {
+                        panic!(
+                            "L: We are overwriting {:?} of {:?} with {:?}",
+                            key,
+                            self.inner[&first_key].0.unwrap(),
+                            value
+                        );
+                    }
+                    self.inner.entry(first_key).or_default().0 = Some(value);
+                }
+
+                // Insert reverse edge
+                if value.0.flip().is_forward() {
+                    let second_key = (key.1, value.1);
+                    let second_value = (key.0.flip(), key.2);
+                    if self.inner.get(&second_key).is_some() && self.inner[&second_key].0.is_some()
+                    {
+                        panic!(
+                            "LRev: We are overwriting {:?} of {:?} with {:?}",
+                            key,
+                            self.inner[&second_key].0.unwrap(),
+                            second_value
+                        );
+                    }
+                    self.inner.entry(second_key).or_default().0 = Some(second_value);
+                }
+            }
+            Side::Right => {
+                // Insert forward edge
+                if key.0.is_forward() {
+                    let first_key = (key.1, key.2);
+                    if self.inner.get(&first_key).is_some() && self.inner[&first_key].1.is_some() {
+                        panic!(
+                            "R: We are overwriting {:?} of {:?} with {:?}",
+                            key,
+                            self.inner[&first_key].1.unwrap(),
+                            value
+                        );
+                    }
+                    self.inner.entry(first_key).or_default().1 = Some(value);
+                }
+
+                // Insert reverse edge
+                if value.0.flip().is_forward() {
+                    let second_key = (key.1, value.1);
+                    let second_value = (key.0.flip(), key.2);
+                    if self.inner.get(&second_key).is_some() && self.inner[&second_key].1.is_some()
+                    {
+                        panic!(
+                            "RRev: We are overwriting {:?} of {:?} with {:?}",
+                            key,
+                            self.inner[&second_key].1.unwrap(),
+                            second_value
+                        );
+                    }
+                    self.inner.entry(second_key).or_default().1 = Some(second_value);
+                }
+            }
+        }
     }
 
     pub fn shrink(&mut self) {
+        self.inner.retain(|_, &mut v| v != (None, None));
         self.inner.shrink_to_fit();
     }
 
-    pub fn remove(&mut self, key: (NodeId, usize, AddressNumber), value: (NodeId, AddressNumber)) {
-        // Insert forward edge
-        self.inner.remove(&key);
+    fn remove(
+        &mut self,
+        side: Side,
+        key: (NodeId, usize, AddressNumber),
+        value: (NodeId, AddressNumber),
+    ) {
+        match side {
+            Side::Left => {
+                // Remove forward edge
+                if key.0.is_forward() {
+                    let first_key = (key.1, key.2);
+                    self.inner.get_mut(&first_key).expect("Neighbors has key").0 = None;
+                }
 
-        // Insert reverse edge
-        let rev_key = (value.0.flip(), key.1, value.1);
-        self.inner.remove(&rev_key);
+                // Remove reverse edge
+                if value.0.flip().is_forward() {
+                    let rev_key = (key.1, value.1);
+                    self.inner.get_mut(&rev_key).expect("Neighbors has key").0 = None;
+                }
+            }
+            Side::Right => {
+                // Remove forward edge
+                if key.0.is_forward() {
+                    let first_key = (key.1, key.2);
+                    self.inner.get_mut(&first_key).expect("Neighbors has key").1 = None;
+                }
+
+                // Remove reverse edge
+                if value.0.flip().is_forward() {
+                    let rev_key = (key.1, value.1);
+                    self.inner.get_mut(&rev_key).expect("Neighbors has key").1 = None;
+                }
+            }
+        }
     }
 
     pub fn remove_occurrence(
         &mut self,
+        side: Side,
         digram: &CanonicalDigram,
         occurrence: &Occurrence,
-        is_right_side: bool,
     ) {
-        if is_right_side {
-            let key = (
-                digram.get_u(),
-                occurrence.0 as usize,
-                occurrence.1.get_first(),
-            );
-            let value = (digram.get_v(), occurrence.1.get_second());
-            self.remove(key, value);
-        } else {
-            let key = (
-                digram.get_v(),
-                occurrence.0 as usize,
-                occurrence.1.get_second(),
-            );
-            let value = (digram.get_u(), occurrence.1.get_first());
-            self.remove(key, value);
+        match side {
+            Side::Left => {
+                let key = (
+                    digram.get_v(),
+                    occurrence.0 as usize,
+                    occurrence.1.get_second(),
+                );
+                let value = (digram.get_u(), occurrence.1.get_first());
+                self.remove(side, key, value);
+            }
+            Side::Right => {
+                let key = (
+                    digram.get_u(),
+                    occurrence.0 as usize,
+                    occurrence.1.get_first(),
+                );
+                let value = (digram.get_v(), occurrence.1.get_second());
+                self.remove(side, key, value);
+            }
         }
     }
 
     pub fn remove_occurrences(
         &mut self,
+        side: Side,
         digram: &CanonicalDigram,
         occurrences: &HashSet<Occurrence, BuildHasherDefault<DefaultHasher>>,
-        is_right_side: bool,
     ) {
         for occurrence in occurrences {
-            self.remove_occurrence(digram, occurrence, is_right_side);
+            self.remove_occurrence(side, digram, occurrence);
         }
     }
 
     pub fn insert_occurrence(
         &mut self,
+        side: Side,
         digram: &CanonicalDigram,
         occurrence: Occurrence,
-        is_right_side: bool,
     ) {
-        if is_right_side {
-            let key = (
-                digram.get_u(),
-                occurrence.0 as usize,
-                occurrence.1.get_first(),
-            );
-            let value = (digram.get_v(), occurrence.1.get_second());
-            self.insert(key, value);
-        } else {
-            let key = (
-                digram.get_v(),
-                occurrence.0 as usize,
-                occurrence.1.get_second(),
-            );
-            let value = (digram.get_u(), occurrence.1.get_first());
-            self.insert(key, value);
+        match side {
+            Side::Left => {
+                let key = (
+                    digram.get_v(),
+                    occurrence.0 as usize,
+                    occurrence.1.get_second(),
+                );
+                let value = (digram.get_u(), occurrence.1.get_first());
+                self.insert(side, key, value);
+            }
+            Side::Right => {
+                let key = (
+                    digram.get_u(),
+                    occurrence.0 as usize,
+                    occurrence.1.get_first(),
+                );
+                let value = (digram.get_v(), occurrence.1.get_second());
+                self.insert(side, key, value);
+            }
         }
     }
 
     pub fn insert_values(
         &mut self,
+        side: Side,
         digram: &CanonicalDigram,
         occurrences: Vec<Occurrence>,
-        is_right_side: bool,
     ) {
         for occurrence in occurrences {
-            self.insert_occurrence(digram, occurrence, is_right_side);
+            self.insert_occurrence(side, digram, occurrence);
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, DeepSizeOf, PartialEq, Eq)]
+pub enum Side {
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Hash, Eq, Ord)]

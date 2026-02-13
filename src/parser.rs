@@ -450,15 +450,9 @@ pub fn get_haplotype_from_walk_string(
     text: &str,
     node_registry: &mut NodeRegistry,
 ) -> Vec<LocalizedDigram> {
-    use std::collections::HashSet;
-
-    use crate::helpers::utils::UndirectedNodeId;
-
     let data = text.as_bytes();
     let mut haplotype = Vec::new();
-    let mut prev_counter = 0;
-    let mut nodes_visited_curr: HashSet<UndirectedNodeId> = HashSet::new();
-    let mut curr_counter = 0;
+    let mut counter = 0;
     let mut it = data.iter();
     let end = it
         .position(|x| x == &b'\t' || x == &b'\n' || x == &b'\r')
@@ -473,23 +467,15 @@ pub fn get_haplotype_from_walk_string(
 
     let mut prev_node = NodeId::new(prev_node, orientation);
 
-    nodes_visited_curr.insert(prev_node.get_undirected());
-
     RE_WALK.captures_iter(&data[..end]).skip(1).for_each(|m| {
         let orientation = Orientation::from_walk(m[1][0]);
         let current_node = node_registry.get_inserted_if_not_exists(m[2].to_vec());
 
         let current_node = NodeId::new(current_node, orientation);
 
-        prev_counter = curr_counter;
-        if nodes_visited_curr.contains(&current_node.get_undirected()) {
-            nodes_visited_curr.clear();
-        }
-        curr_counter += 1;
-        nodes_visited_curr.insert(current_node.get_undirected());
-
         let digram = Digram::new(prev_node, current_node);
-        let address = Address::new(prev_counter, curr_counter);
+        let address = Address::new(counter, counter + 1);
+        counter += 1;
         let local_digram = LocalizedDigram::new(digram, address);
         haplotype.push(local_digram);
 
