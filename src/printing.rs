@@ -3,10 +3,16 @@ use crate::{
     Rule,
 };
 
-pub fn print_grammar_simple(rules: &DeterministicHashMap<NodeId, Vec<NodeId>>) {
+pub fn print_grammar_simple(
+    rules: &DeterministicHashMap<NodeId, Vec<NodeId>>,
+    node_registry: &ReverseNodeRegistry,
+) {
     for (meta_node, rule) in rules {
-        let rule_text: String = rule.iter().map(|n| n.to_string()).collect();
-        println!("Q\t{}\t{}", meta_node, rule_text);
+        let rule_text: String = rule
+            .iter()
+            .map(|n| node_registry.get_directed_name(*n))
+            .collect();
+        println!("Q\t{}\t{}", node_registry.get_name(meta_node.0), rule_text);
     }
 }
 
@@ -32,11 +38,10 @@ pub fn print_grammar(grammar: &[Rule], node_registry: &ReverseNodeRegistry, prin
 }
 
 pub fn print_walks(
-    walks: &[Vec<NodeId>],
+    named_walks: &[(PathSegment, Vec<NodeId>)],
     node_registry: &ReverseNodeRegistry,
-    haplotype_names: &[PathSegment],
 ) {
-    for (walk, haplotype_name) in walks.iter().zip(haplotype_names.iter()) {
+    for (haplotype_name, walk) in named_walks {
         print!("W\t{}\t", haplotype_name);
         for node in walk {
             print!("{}", node_registry.get_directed_name(*node));

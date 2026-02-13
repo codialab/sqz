@@ -2,10 +2,10 @@ use std::fmt::{self, Display};
 
 use deepsize::DeepSizeOf;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, DeepSizeOf)]
 pub struct AddressNumber(pub u32);
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, DeepSizeOf)]
 pub struct Address(pub AddressNumber, pub AddressNumber);
 
 impl Ord for Address {
@@ -205,7 +205,7 @@ impl Digram {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, DeepSizeOf)]
 pub struct CanonicalDigram(pub NodeId, pub NodeId);
 
 impl CanonicalDigram {

@@ -427,6 +427,7 @@ fn parse_walk_seq(data: &[u8], node_ids_by_name: &NodeRegistry) -> Vec<NodeId> {
     haplotype
 }
 
+#[cfg(test)]
 pub fn parse_walk_seq_plainly(data: &[u8]) -> Vec<NodeId> {
     let haplotype = RE_WALK
         .captures_iter(data)

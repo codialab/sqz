@@ -4,13 +4,14 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use deepsize::DeepSizeOf;
 
 use crate::helpers::{
     utils::LocalizedDigram, AddressNumber, CanonicalDigram, DeterministicHashMap,
     DeterministicHashSet, Freq, NeighborList, NodeId, Occurrence,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct DigramOccurrences {
     inner: DeterministicHashMap<CanonicalDigram, DeterministicHashSet<Occurrence>>,
     neighbor_left: NeighborList,
@@ -67,6 +68,12 @@ impl DigramOccurrences {
         }
 
         d.freq = d.get_freq();
+        log::info!("Created DigramOccurrences with {} occurrences (inner: {}MB, left: {}MB, right: {}MB, freq: {}MB)",
+        d.total_len(),
+        d.inner.deep_size_of() / 1_000_000,
+        d.neighbor_left.deep_size_of() / 1_000_000,
+        d.neighbor_right.deep_size_of() / 1_000_000,
+        d.freq.deep_size_of() / 1_000_000);
         d
     }
 

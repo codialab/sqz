@@ -122,7 +122,14 @@ impl NodeRegistry {
     }
 
     pub fn get_id(&self, name: &[u8]) -> UndirectedNodeId {
-        self.inner[name]
+        if let Some(id) = self.inner.get(name) {
+            *id
+        } else {
+            panic!(
+                "Could not find node {} in NodeRegistry",
+                str::from_utf8(name).unwrap()
+            )
+        }
     }
 
     pub fn get_new_meta_node(&mut self) -> NodeId {
@@ -164,7 +171,7 @@ impl From<Occurrence> for RuleOccurrence {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, DeepSizeOf)]
 pub struct Occurrence(u32, Address);
 
 impl fmt::Debug for Occurrence {
@@ -309,7 +316,7 @@ impl Occurrence {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct Freq {
     inner: Vec<DeterministicHashSet<CanonicalDigram>>,
 }
@@ -357,7 +364,7 @@ impl Freq {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DeepSizeOf)]
 pub struct NeighborList {
     inner: HashMap<(NodeId, usize, AddressNumber), (NodeId, AddressNumber)>,
 }

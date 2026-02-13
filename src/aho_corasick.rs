@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::fmt::Debug;
 use std::hash::Hash;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,7 +28,7 @@ pub struct AhoCorasick<T> {
     nodes: Vec<TrieNode<T>>,
 }
 
-impl<T: Hash + Eq + Clone> AhoCorasick<T> {
+impl<T: Hash + Eq + Clone + Debug> AhoCorasick<T> {
     pub fn num_states(&self) -> usize {
         self.nodes.len()
     }
@@ -87,10 +88,13 @@ impl<T: Hash + Eq + Clone> AhoCorasick<T> {
                 {
                     parent_of_fail = self.nodes[parent_of_fail].fail;
                 }
-                self.nodes[child].fail = match self.nodes[parent_of_fail].next_node.get(&token) {
+                let failure_target = match self.nodes[parent_of_fail].next_node.get(&token) {
                     Some(fail_node) => *fail_node,
                     None => 0,
                 };
+                self.nodes[child].fail = failure_target;
+                let matches_of_failure_target = self.nodes[failure_target].matches.clone();
+                self.nodes[child].matches.extend(matches_of_failure_target);
             }
         }
     }

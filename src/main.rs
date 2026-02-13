@@ -7,7 +7,7 @@ use itertools::Itertools;
 use std::{collections::HashSet, path::PathBuf};
 
 use crate::{
-    compressing::compress_remaining_file,
+    compressing::{compress, compress_remaining_file},
     decoding::decode_and_print_walks,
     encoding::get_haplotype_walks,
     grammar_building::{build_grammar, Rule},
@@ -81,8 +81,30 @@ enum Commands {
         ratio: f32,
     },
 
+    /// Test whether a file can be fully and correctly compressed
+    /// (for debugging only)
     #[command(arg_required_else_help = true)]
     Test {
+        /// Input GFA file
+        #[arg(required = true)]
+        file: PathBuf,
+    },
+
+    /// Check whether a compressed file contains any duplicates
+    /// (for debugging only)
+    #[command(arg_required_else_help = true)]
+    CheckCompressibility {
+        /// Input GFA file
+        #[arg(required = true)]
+        file: PathBuf,
+    },
+
+    /// Reads in a file that already contains a grammar and tries to
+    /// compress the file according to this grammar. This can be used
+    /// to add new walks to an existing compressed graph.
+    #[command(arg_required_else_help = true)]
+    CompressAdditional {
+        /// Input GFA file
         #[arg(required = true)]
         file: PathBuf,
     },
@@ -104,18 +126,14 @@ fn main() -> Result<()> {
             let mut d = DigramOccurrences::from(haplotypes);
             let grammar = build_grammar(&mut d, &mut node_registry);
             let rev_reg: ReverseNodeRegistry = node_registry.into();
-            for (digram, occurrences) in &d {
-                log::info!(
-                    "| {}{} -> {:?}",
-                    rev_reg.get_directed_name(digram.0),
-                    rev_reg.get_directed_name(digram.1),
-                    occurrences
-                );
-            }
-            print_grammar(&grammar, &rev_reg, true);
+            print_grammar(&grammar, &rev_reg, false);
             let haplotype_walks =
                 get_haplotype_walks(&d, &grammar, &singleton_haplotypes, number_of_paths);
-            print_walks(&haplotype_walks, &rev_reg, &haplotype_names);
+            let named_haplotypes: Vec<(PathSegment, Vec<NodeId>)> = haplotype_names
+                .into_iter()
+                .zip(haplotype_walks.into_iter())
+                .collect();
+            print_walks(&named_haplotypes, &rev_reg);
         }
         Commands::Decompress { file, use_p_lines } => {
             log::info!("Decompressing file {:?}", file);
@@ -145,10 +163,14 @@ fn main() -> Result<()> {
                     .into_iter()
                     .map(|(k, v0, v1, _)| (k, vec![v0, v1]))
                     .collect();
-                print_grammar_simple(&grammar);
-
                 let rev_reg: ReverseNodeRegistry = node_registry.clone().into();
-                print_walks(&haplotype_walks, &rev_reg, &haplotype_names);
+                print_grammar_simple(&grammar, &rev_reg);
+
+                let named_haplotypes: Vec<(PathSegment, Vec<NodeId>)> = haplotype_names
+                    .into_iter()
+                    .zip(haplotype_walks.into_iter())
+                    .collect();
+                print_walks(&named_haplotypes, &rev_reg);
                 (grammar, compressed_paths, node_registry, rev_reg)
             };
 
@@ -158,6 +180,24 @@ fn main() -> Result<()> {
                 rev_reg.deep_size_of() as f64 / 1e9
             );
             compress_remaining_file(&file, grammar, &compressed_paths, &node_registry, &rev_reg)?;
+        }
+        Commands::CompressAdditional { file } => {
+            log::info!("Reading file {:?}", file);
+            let (haplotypes, node_registry, grammar) =
+                parse_file_to_haplotypes_with_grammar(&file, true)?;
+            let rev_reg: ReverseNodeRegistry = node_registry.into();
+            let grammar: DeterministicHashMap<NodeId, Vec<NodeId>> = grammar
+                .into_iter()
+                .map(|(k, (a, b))| {
+                    (
+                        NodeId::new(k, helpers::utils::Orientation::Forward),
+                        vec![a, b],
+                    )
+                })
+                .collect();
+            print_grammar_simple(&grammar, &rev_reg);
+            let named_walks = compress(haplotypes, grammar);
+            print_walks(&named_walks, &rev_reg);
         }
         Commands::Test { file } => {
             log::info!("Testing on file {:?}", file);
@@ -184,6 +224,13 @@ fn main() -> Result<()> {
 
             compare_file(&file, &haplotype_walks, &grammar, &node_registry);
         }
+        Commands::CheckCompressibility { file } => {
+            log::info!("Decompressing file {:?}", file);
+            let (haplotypes, node_registry, grammar) =
+                parse_file_to_haplotypes_with_grammar(&file, false)?;
+            let unnamed_haplotypes = haplotypes.into_iter().map(|(_, w)| w).collect_vec();
+            check_incompressibility(&unnamed_haplotypes, &grammar, &node_registry);
+        }
     }
     Ok(())
 }
@@ -197,9 +244,11 @@ fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar, node_regist
         let digram: CanonicalDigram = Digram::new(rule.0, rule.1).into();
         if !digrams.insert(digram.clone()) {
             log::error!(
-                "Digram {:?} - {:?} seen twice in grammar",
+                "Digram {} (internal: {}) - {} (internal: {}) seen twice in grammar",
                 rev_node.get_directed_name(digram.0),
-                rev_node.get_directed_name(digram.1)
+                digram.0 .0 .0,
+                rev_node.get_directed_name(digram.1),
+                digram.1 .0 .0,
             );
         }
         total_seen_digrams += 1;
@@ -210,9 +259,11 @@ fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar, node_regist
             let digram: CanonicalDigram = Digram::new(*u, *v).into();
             if !digrams.insert(digram.clone()) {
                 log::error!(
-                    "Digram {:?} - {:?} seen twice",
+                    "Digram {} (internal: {}) - {} (internal: {}) seen twice",
                     rev_node.get_directed_name(digram.0),
-                    rev_node.get_directed_name(digram.1)
+                    digram.0 .0 .0,
+                    rev_node.get_directed_name(digram.1),
+                    digram.1 .0 .0,
                 );
             }
             total_seen_digrams += 1;

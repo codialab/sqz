@@ -9,6 +9,7 @@ use rayon::iter::ParallelIterator;
 
 use crate::aho_corasick::AhoCorasick;
 use crate::aho_corasick::Match;
+use crate::helpers::PathSegment;
 use crate::{
     helpers::{utils::NodeId, DeterministicHashMap, NodeRegistry, ReverseNodeRegistry},
     parser::{bufreader_from_compressed, path_from_line, ByteLineReader},
@@ -76,14 +77,12 @@ pub fn compress_remaining_file(
     Ok(())
 }
 
-#[cfg(test)]
-fn compress(
-    haplotypes: Vec<Vec<NodeId>>,
+pub fn compress(
+    haplotypes: Vec<(PathSegment, Vec<NodeId>)>,
     mut rules: DeterministicHashMap<NodeId, Vec<NodeId>>,
-) -> Vec<String> {
+) -> Vec<(PathSegment, Vec<NodeId>)> {
     unroll_rules(&mut rules);
     log::info!("Unrolled all rules");
-    let mut solutions = Vec::new();
     let ac = {
         let patterns: HashMap<NodeId, Vec<NodeId>> = rules
             .into_iter()
@@ -101,13 +100,10 @@ fn compress(
         "Done with setting up Aho-Corasick data structure with {} states",
         ac.num_states()
     );
-    // Add reverse-complement patterns
-    for haplotype in haplotypes {
-        let text = compress_haplotype(haplotype, &ac);
-        let text = text.into_iter().map(|n| n.to_string()).collect();
-        solutions.push(text);
-    }
-    solutions
+    haplotypes
+        .into_iter()
+        .map(|(n, h)| (n, compress_haplotype(h, &ac)))
+        .collect()
 }
 
 // Unrolls rules so that no rule text contains meta-nodes
@@ -203,7 +199,20 @@ mod tests {
                 get_node(5, false, true),
             ],
         );
-        let res = compress(vec![h], rules);
-        assert_eq!(res, vec![">8"]);
+        let mut res = compress(
+            vec![(
+                PathSegment::new(
+                    "A".to_string(),
+                    "0".to_string(),
+                    "1".to_string(),
+                    None,
+                    None,
+                ),
+                h,
+            )],
+            rules,
+        );
+        let res = std::mem::take(&mut res[0].1);
+        assert_eq!(res, vec![get_node(8, true, true)]);
     }
 }
