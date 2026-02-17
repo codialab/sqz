@@ -1,10 +1,10 @@
-use crate::{
-    helpers::{utils::NodeId, DeterministicHashMap, PathSegment, ReverseNodeRegistry},
-    Rule,
+use crate::helpers::{
+    utils::{NodeId, UndirectedNodeId},
+    DeterministicHashMap, PathSegment, ReverseNodeRegistry,
 };
 
 pub fn print_grammar_simple(
-    rules: &DeterministicHashMap<NodeId, Vec<NodeId>>,
+    rules: &DeterministicHashMap<UndirectedNodeId, Vec<NodeId>>,
     node_registry: &ReverseNodeRegistry,
 ) {
     for (meta_node, rule) in rules {
@@ -12,28 +12,7 @@ pub fn print_grammar_simple(
             .iter()
             .map(|n| node_registry.get_directed_name(*n))
             .collect();
-        println!("Q\t{}\t{}", node_registry.get_name(meta_node.0), rule_text);
-    }
-}
-
-pub fn print_grammar(grammar: &[Rule], node_registry: &ReverseNodeRegistry, print_addresses: bool) {
-    for rule in grammar {
-        if !print_addresses {
-            println!(
-                "Q\t{}\t{}{}",
-                node_registry.get_name(rule.0 .0),
-                node_registry.get_directed_name(rule.1),
-                node_registry.get_directed_name(rule.2)
-            );
-        } else {
-            println!(
-                "Q\t{}\t{}{}\t{:?}",
-                node_registry.get_name(rule.0 .0),
-                node_registry.get_directed_name(rule.1),
-                node_registry.get_directed_name(rule.2),
-                rule.3
-            );
-        }
+        println!("Q\t{}\t{}", node_registry.get_name(*meta_node), rule_text);
     }
 }
 
