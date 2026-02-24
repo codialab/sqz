@@ -91,6 +91,21 @@ impl NodeRegistry {
         }
     }
 
+    pub fn insert_with_meta_node_increase(&mut self, name: Vec<u8>) -> Result<()> {
+        let parsed_name = str::from_utf8(&name[1..])?;
+        let parsed_name = parsed_name.parse::<u32>();
+        // If the node names of the preexisting meta-nodes parse as @X 
+        // where X is a number, meta_node_number has to be set higher than the
+        // highest of that
+        if let Ok(number) = parsed_name {
+            if number > self.meta_node_number {
+                self.meta_node_number = number + 1;
+            }
+        }
+        self.insert(name, false)?;
+        Ok(())
+    }
+
     pub fn insert(&mut self, name: Vec<u8>, is_meta_node: bool) -> Result<()> {
         self.get_inserted(name, is_meta_node)
             .ok_or_else(|| anyhow!("Inserted node name already appeared"))?;
