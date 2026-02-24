@@ -5,6 +5,8 @@
 *.vg
 *.log
 *.gbwt
+*.tsv
+*.csv
 /vendor
 *.zst
 massif.out.*

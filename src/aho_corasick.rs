@@ -2,6 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::hash::Hash;
 
+use itertools::Itertools;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Match<T> {
     pub pattern_id: T,
@@ -144,11 +146,86 @@ impl<T: Hash + Eq + Clone + Debug> AhoCorasick<T> {
 
         matches
     }
+
+}
+
+impl<T: Hash + Eq + Clone + Debug + ReverseComplementable> AhoCorasick<T> {
+    pub fn find_all_reverse_complement(&self, haystack: &[T]) -> Vec<Match<T>> {
+        let mut matches = Vec::new();
+        let mut curr = 0;
+
+        let mut cache = Vec::new();
+
+        for (pos, token) in haystack.iter().enumerate() {
+            while curr != 0 && !self.nodes[curr].next_node.contains_key(token) {
+                curr = self.nodes[curr].fail;
+            }
+            if self.nodes[curr].next_node.contains_key(token) {
+                curr = self.nodes[curr].next_node[token];
+                cache.extend(
+                    self.nodes[curr]
+                        .matches
+                        .iter()
+                        .map(|(pattern, length)| Match {
+                            pattern_id: pattern.clone(),
+                            pattern_range: (pos + 1 - length)..(pos + 1),
+                        }),
+                );
+            }
+        }
+
+        let reverse_haystack = haystack.into_iter().rev().map(|t| t.complement()).collect_vec();
+        let length_haystack = reverse_haystack.len();
+        let mut curr = 0;
+        for (rev_pos, token) in reverse_haystack.iter().enumerate() {
+            while curr != 0 && !self.nodes[curr].next_node.contains_key(token) {
+                curr = self.nodes[curr].fail;
+            }
+            if self.nodes[curr].next_node.contains_key(token) {
+                curr = self.nodes[curr].next_node[token];
+                cache.extend(
+                    self.nodes[curr]
+                        .matches
+                        .iter()
+                        .map(|(pattern, length)| Match {
+                            pattern_id: pattern.complement(),
+                            pattern_range: (length_haystack - (rev_pos + 1))..(length_haystack - (rev_pos + 1) + length),
+                        }),
+                );
+            }
+        }
+
+        if cache.is_empty() {
+            return matches;
+        }
+
+        cache.sort_by(|a, b| {
+            a.pattern_range
+                .start
+                .cmp(&b.pattern_range.start)
+                .then(b.pattern_range.len().cmp(&a.pattern_range.len()))
+        });
+
+        let mut current_end = 0;
+        for candidate in cache {
+            if candidate.pattern_range.start >= current_end {
+                current_end = candidate.pattern_range.end;
+                matches.push(candidate);
+            }
+        }
+
+        matches
+    }
+}
+
+pub trait ReverseComplementable {
+    fn complement(&self) -> Self;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::helpers::utils::simple_node_creation::*;
 
     #[test]
     fn test_simple_search() {
@@ -184,6 +261,26 @@ mod tests {
             Match {
                 pattern_id: 1,
                 pattern_range: 0..3
+            }
+        )
+    }
+
+    #[test]
+    fn test_find_rev_comp() {
+        let patterns = HashMap::from([
+            (m(10), vec![n(1), n(2), n(3)]),
+            (m(11), vec![rn(4), rn(3), rn(2), rn(1)]),
+        ]);
+        let ac = AhoCorasick::new(&patterns);
+        let haystack = vec![n(1), n(2), n(3), n(4)];
+        let matches = ac.find_all_reverse_complement(&haystack);
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0],
+            Match {
+                pattern_id: rm(11),
+                pattern_range: 0..4
             }
         )
     }

@@ -4,8 +4,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 
 use itertools::Itertools;
-use rayon::iter::ParallelBridge;
-use rayon::iter::ParallelIterator;
+use rayon::prelude::*;
 
 use crate::aho_corasick::AhoCorasick;
 use crate::aho_corasick::Match;
@@ -24,15 +23,12 @@ pub fn compress_remaining_file(
 ) -> Result<()> {
     unroll_rules(&mut rules);
     log::info!("Unrolled all rules");
+
+    log::info!("Collected all small rules");
+
     let ac = {
         let patterns: HashMap<NodeId, Vec<NodeId>> = rules
             .into_iter()
-            .flat_map(|(k, v)| {
-                [
-                    (k.flip(), v.iter().rev().map(|n| n.flip()).collect_vec()),
-                    (k, v),
-                ]
-            })
             .collect();
 
         AhoCorasick::new(&patterns)
@@ -84,15 +80,7 @@ pub fn compress(
     unroll_rules(&mut rules);
     log::info!("Unrolled all rules");
     let ac = {
-        let patterns: HashMap<NodeId, Vec<NodeId>> = rules
-            .into_iter()
-            .flat_map(|(k, v)| {
-                [
-                    (k.flip(), v.iter().rev().map(|n| n.flip()).collect_vec()),
-                    (k, v),
-                ]
-            })
-            .collect();
+        let patterns: HashMap<NodeId, Vec<NodeId>> = rules.into_iter().collect();
 
         AhoCorasick::new(&patterns)
     };
@@ -142,7 +130,7 @@ fn unroll_rule(key: &NodeId, rules: &mut DeterministicHashMap<NodeId, Vec<NodeId
 }
 
 fn compress_haplotype(haplotype: Vec<NodeId>, ac: &AhoCorasick<NodeId>) -> Vec<NodeId> {
-    let matches = ac.find_all(&haplotype);
+    let matches = ac.find_all_reverse_complement(&haplotype);
     let mut text = haplotype.into_iter().map(Some).collect_vec();
     for Match {
         pattern_id,
@@ -156,13 +144,13 @@ fn compress_haplotype(haplotype: Vec<NodeId>, ac: &AhoCorasick<NodeId>) -> Vec<N
             *entry = None;
         }
     }
-    let text: Vec<NodeId> = text.into_iter().flatten().collect();
+    let text = text.into_iter().flatten().collect_vec();
     text
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::helpers::utils::UndirectedNodeId;
+    use crate::helpers::utils::{UndirectedNodeId};
     use crate::parser::parse_walk_seq_plainly;
 
     use super::*;

@@ -2,6 +2,8 @@ use std::fmt::{self, Display};
 
 use deepsize::DeepSizeOf;
 
+use crate::aho_corasick::ReverseComplementable;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, DeepSizeOf)]
 pub struct AddressNumber(pub u32);
 
@@ -164,6 +166,45 @@ impl Display for NodeId {
                 Orientation::Backward => "<",
             },
             self.0 .0
+        )
+    }
+}
+
+impl ReverseComplementable for NodeId {
+    fn complement(&self) -> Self {
+        self.flip()
+    }
+}
+
+#[cfg(test)]
+pub mod simple_node_creation {
+    use super::*;
+
+    pub fn n(x: u32) -> NodeId {
+        NodeId(
+            UndirectedNodeId(x, false),
+            Orientation::Forward,
+        )
+    }
+
+    pub fn m(x: u32) -> NodeId {
+        NodeId(
+            UndirectedNodeId(x, true),
+            Orientation::Forward,
+        )
+    }
+
+    pub fn rn(x: u32) -> NodeId {
+        NodeId(
+            UndirectedNodeId(x, false),
+            Orientation::Backward,
+        )
+    }
+
+    pub fn rm(x: u32) -> NodeId {
+        NodeId(
+            UndirectedNodeId(x, true),
+            Orientation::Backward,
         )
     }
 }
