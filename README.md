@@ -108,3 +108,8 @@ L       s12     -       s13     +       0M
 L       s11     +       s13     +       0M
 Q       @q1      >s11<s12
 W       NA12878 1       chr1    0       11      >@q1>s13
+```
+
+## Citation
+
+Peter Heringer and Daniel Doerr. Human Readable Compression of GFA Paths Using Grammar-Based Code. In 25th International Conference on Algorithms for Bioinformatics (WABI 2025). Leibniz International Proceedings in Informatics (LIPIcs), Volume 344, pp. 14:1-14:19, Schloss Dagstuhl – Leibniz-Zentrum für Informatik (2025) [https://doi.org/10.4230/LIPIcs.WABI.2025.14](https://doi.org/10.4230/LIPIcs.WABI.2025.14)
