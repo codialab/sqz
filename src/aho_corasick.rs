@@ -147,7 +147,6 @@ impl<T: Hash + Eq + Clone + Debug> AhoCorasick<T> {
 
         matches
     }
-
 }
 
 impl<T: Hash + Eq + Clone + Debug + ReverseComplementable> AhoCorasick<T> {
@@ -175,7 +174,7 @@ impl<T: Hash + Eq + Clone + Debug + ReverseComplementable> AhoCorasick<T> {
             }
         }
 
-        let reverse_haystack = haystack.into_iter().rev().map(|t| t.complement()).collect_vec();
+        let reverse_haystack = haystack.iter().rev().map(|t| t.complement()).collect_vec();
         let length_haystack = reverse_haystack.len();
         let mut curr = 0;
         for (rev_pos, token) in reverse_haystack.iter().enumerate() {
@@ -190,7 +189,8 @@ impl<T: Hash + Eq + Clone + Debug + ReverseComplementable> AhoCorasick<T> {
                         .iter()
                         .map(|(pattern, length)| Match {
                             pattern_id: pattern.complement(),
-                            pattern_range: (length_haystack - (rev_pos + 1))..(length_haystack - (rev_pos + 1) + length),
+                            pattern_range: (length_haystack - (rev_pos + 1))
+                                ..(length_haystack - (rev_pos + 1) + length),
                         }),
                 );
             }

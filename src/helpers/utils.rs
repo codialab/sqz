@@ -181,31 +181,19 @@ pub mod simple_node_creation {
     use super::*;
 
     pub fn n(x: u32) -> NodeId {
-        NodeId(
-            UndirectedNodeId(x, false),
-            Orientation::Forward,
-        )
+        NodeId(UndirectedNodeId(x, false), Orientation::Forward)
     }
 
     pub fn m(x: u32) -> NodeId {
-        NodeId(
-            UndirectedNodeId(x, true),
-            Orientation::Forward,
-        )
+        NodeId(UndirectedNodeId(x, true), Orientation::Forward)
     }
 
     pub fn rn(x: u32) -> NodeId {
-        NodeId(
-            UndirectedNodeId(x, false),
-            Orientation::Backward,
-        )
+        NodeId(UndirectedNodeId(x, false), Orientation::Backward)
     }
 
     pub fn rm(x: u32) -> NodeId {
-        NodeId(
-            UndirectedNodeId(x, true),
-            Orientation::Backward,
-        )
+        NodeId(UndirectedNodeId(x, true), Orientation::Backward)
     }
 }
 

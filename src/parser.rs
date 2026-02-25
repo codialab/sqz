@@ -147,16 +147,18 @@ pub fn parse_file_to_digrams(
     parse_file_content_to_digrams(data, node_ids_by_name, should_print_other_lines, None)
 }
 
-pub fn parse_file_to_digrams_ratio_based(
-    file: &PathBuf,
-    should_print_other_lines: bool,
-    ratio: f32,
-) -> Result<(
+type RatioPaths = (
     NamedPath,
     NodeRegistry,
     DeterministicHashMap<usize, NodeId>,
     Vec<bool>,
-)> {
+);
+
+pub fn parse_file_to_digrams_ratio_based(
+    file: &PathBuf,
+    should_print_other_lines: bool,
+    ratio: f32,
+) -> Result<RatioPaths> {
     let data = bufreader_from_compressed(file)?;
     let (node_ids_by_name, number_of_paths) = parse_node_ids(data, false, false)?;
     let mut compressed_paths = vec![false; number_of_paths];
@@ -283,7 +285,11 @@ fn walk_to_haplotype(line: &[u8], node_ids_by_name: &NodeRegistry) -> Option<Pat
     Some((path_seg, haplotype))
 }
 
-fn parse_node_ids<R: Read>(data: R, with_q: bool, treat_q_as_s: bool) -> Result<(NodeRegistry, usize)> {
+fn parse_node_ids<R: Read>(
+    data: R,
+    with_q: bool,
+    treat_q_as_s: bool,
+) -> Result<(NodeRegistry, usize)> {
     let mut node2id: NodeRegistry = NodeRegistry::new();
 
     log::info!("constructing indexes for node/edge IDs, node lengths, and P/W lines..");
@@ -310,17 +316,15 @@ fn parse_node_ids<R: Read>(data: R, with_q: bool, treat_q_as_s: bool) -> Result<
                         str::from_utf8(&buf[2..offset + 2]).unwrap()
                     )
                 }
-            } else {
-                if node2id
-                    .insert(buf[2..offset + 2].to_vec(), is_meta)
-                    .is_err()
-                {
-                    println!("{}", str::from_utf8(&buf).unwrap());
-                    panic!(
-                        "Segment with ID {} occurs multiple times in GFA",
-                        str::from_utf8(&buf[2..offset + 2]).unwrap()
-                    )
-                }
+            } else if node2id
+                .insert(buf[2..offset + 2].to_vec(), is_meta)
+                .is_err()
+            {
+                println!("{}", str::from_utf8(&buf).unwrap());
+                panic!(
+                    "Segment with ID {} occurs multiple times in GFA",
+                    str::from_utf8(&buf[2..offset + 2]).unwrap()
+                )
             }
         } else if buf[0] == b'P' || buf[0] == b'W' {
             number_of_paths += 1;

@@ -27,9 +27,7 @@ pub fn compress_remaining_file(
     log::info!("Collected all small rules");
 
     let ac = {
-        let patterns: HashMap<NodeId, Vec<NodeId>> = rules
-            .into_iter()
-            .collect();
+        let patterns: HashMap<NodeId, Vec<NodeId>> = rules.into_iter().collect();
 
         AhoCorasick::new(&patterns)
     };
@@ -144,13 +142,13 @@ fn compress_haplotype(haplotype: Vec<NodeId>, ac: &AhoCorasick<NodeId>) -> Vec<N
             *entry = None;
         }
     }
-    let text = text.into_iter().flatten().collect_vec();
-    text
+
+    text.into_iter().flatten().collect_vec()
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::helpers::utils::{UndirectedNodeId};
+    use crate::helpers::utils::UndirectedNodeId;
     use crate::parser::parse_walk_seq_plainly;
 
     use super::*;
