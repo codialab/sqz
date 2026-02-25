@@ -101,6 +101,7 @@ impl<T: Hash + Eq + Clone + Debug> AhoCorasick<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn find_all(&self, haystack: &[T]) -> Vec<Match<T>> {
         let mut matches = Vec::new();
         let mut curr = 0;
