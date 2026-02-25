@@ -29,8 +29,8 @@ sqz compress-partial --help
 ### Using a precompiled binary
 Use
 ```bash
-wget 
-chmod +x 
+wget https://github.com/codialab/sqz/releases/download/v0.2.0/sqz
+chmod +x sqz
 ```
 and make `sqz` available on your `PATH` to install it.
 
