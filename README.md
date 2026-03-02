@@ -29,6 +29,11 @@ sqz compress-partial --help
 ```
 
 ## Installation
+### Using conda/mamba
+```bash
+conda install -c conda-forge -c bioconda sqz
+```
+
 ### Using a precompiled binary
 Use
 ```bash
