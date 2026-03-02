@@ -1,4 +1,7 @@
 [![Rust](https://github.com/codialab/sqz/actions/workflows/rust.yml/badge.svg)](https://github.com/codialab/sqz/actions/workflows/rust.yml)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/sqz/badges/version.svg)](https://anaconda.org/bioconda/sqz)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/sqz/badges/platforms.svg)](https://anaconda.org/bioconda/sqz)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/sqz/badges/license.svg)](https://anaconda.org/bioconda/sqz)
 
 # Human-readable path compression in GFA-formatted pangenome graphs
 
