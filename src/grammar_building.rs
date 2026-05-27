@@ -305,6 +305,33 @@ mod tests {
     }
 
     #[test]
+    fn test_pre_self_loop_case_long() {
+        let haplotypes = vec![">0>1>2>1>2>1>3"];
+        let mut node_registry = NodeRegistry::new();
+        let haplotypes = get_haplotypes_from_walk_strings(haplotypes, &mut node_registry);
+        let mut d = DigramOccurrences::from(haplotypes);
+        let u = NodeId::new(node_registry.get_id("1".as_bytes()), Orientation::Forward);
+        let v = NodeId::new(node_registry.get_id("2".as_bytes()), Orientation::Forward);
+        let uv = Digram::new(u, v).into();
+        assert!(!d.are_neighbors_equal());
+        let rule = build_rule(uv, &mut d, &mut node_registry);
+        println!("Rule: {:?}", rule);
+        d.print_occurrences();
+        assert!(!d.are_neighbors_equal());
+        assert_eq!(rule.1, u);
+        assert_eq!(rule.2, v);
+        assert_eq!(rule.3.len(), 1);
+        let self_loop_meta = rule.0;
+        let uv = Digram::new(self_loop_meta, self_loop_meta).into();
+        let rule = build_rule(uv, &mut d, &mut node_registry);
+        println!("Rule: {:?}", rule);
+        assert!(!d.are_neighbors_equal());
+        assert_eq!(rule.1, self_loop_meta);
+        assert_eq!(rule.2, self_loop_meta);
+        assert_eq!(rule.3.len(), 1);
+    }
+
+    #[test]
     fn test_pre_self_loop_case_2_reverse() {
         let haplotypes = vec!["<0<1<2<1<2<3"];
         let mut node_registry = NodeRegistry::new();
