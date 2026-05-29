@@ -346,10 +346,6 @@ fn main() -> Result<()> {
             let (haplotypes, node_registry, grammar) =
                 parse_file_to_haplotypes_with_grammar(&file, true)?;
             let rev_reg: ReverseNodeRegistry = node_registry.into();
-            let grammar: DeterministicHashMap<UndirectedNodeId, Vec<NodeId>> = grammar
-                .into_iter()
-                .map(|(k, (a, b))| (k, vec![a, b]))
-                .collect();
             print_grammar_simple(&grammar, &rev_reg);
             let grammar = grammar
                 .into_iter()
@@ -377,7 +373,7 @@ fn main() -> Result<()> {
 
             let grammar: Grammar = grammar
                 .into_iter()
-                .map(|(name, u, v, _)| (name.get_undirected(), (u, v)))
+                .map(|(name, u, v, _)| (name.get_undirected(), vec![u, v]))
                 .collect();
             check_incompressibility(&haplotype_walks, &grammar, &node_registry);
 
@@ -400,17 +396,19 @@ fn check_incompressibility(walks: &[Vec<NodeId>], grammar: &Grammar, node_regist
     let rev_node: ReverseNodeRegistry = node_registry.clone().into();
 
     for rule in grammar.values() {
-        let digram: CanonicalDigram = Digram::new(rule.0, rule.1).into();
-        if !digrams.insert(digram.clone()) {
-            log::error!(
-                "Digram {} (internal: {}) - {} (internal: {}) seen twice in grammar",
-                rev_node.get_directed_name(digram.0),
-                digram.0 .0 .0,
-                rev_node.get_directed_name(digram.1),
-                digram.1 .0 .0,
-            );
+        for (u, v) in rule.iter().tuple_windows() {
+            let digram: CanonicalDigram = Digram::new(*u, *v).into();
+            if !digrams.insert(digram.clone()) {
+                log::error!(
+                    "Digram {} (internal: {}) - {} (internal: {}) seen twice in grammar",
+                    rev_node.get_directed_name(digram.0),
+                    digram.0 .0 .0,
+                    rev_node.get_directed_name(digram.1),
+                    digram.1 .0 .0,
+                );
+            }
+            total_seen_digrams += 1;
         }
-        total_seen_digrams += 1;
     }
 
     for walk in walks {

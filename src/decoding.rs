@@ -84,8 +84,8 @@ fn decode_node(node: NodeId, grammar: &Grammar) -> Vec<NodeId> {
 
     let rule = grammar
         .get(&node.get_undirected())
-        .expect("All meta nodes have rules");
-    let rule = vec![rule.0, rule.1];
+        .expect("All meta nodes have rules")
+        .clone();
     if node.is_forward() {
         rule.into_iter()
             .flat_map(|n| decode_node(n, grammar))

@@ -336,7 +336,7 @@ fn parse_node_ids<R: Read>(
     Ok((node2id, number_of_paths))
 }
 
-pub type Grammar = DeterministicHashMap<UndirectedNodeId, (NodeId, NodeId)>;
+pub type Grammar = DeterministicHashMap<UndirectedNodeId, Vec<NodeId>>;
 
 fn parse_grammar<R: Read>(data: R, node_ids_by_name: &NodeRegistry) -> Result<Grammar> {
     let mut grammar = DeterministicHashMap::default();
@@ -352,7 +352,6 @@ fn parse_grammar<R: Read>(data: R, node_ids_by_name: &NodeRegistry) -> Result<Gr
             let rule_name = &buf[2..offset + 2];
             let meta_node = node_ids_by_name.get_id(rule_name);
             let right_hand_side = parse_walk_seq(&buf[offset + 3..], node_ids_by_name);
-            let right_hand_side = (right_hand_side[0], right_hand_side[1]);
             grammar.insert(meta_node, right_hand_side);
         }
         buf.clear();
