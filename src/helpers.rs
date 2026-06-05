@@ -82,6 +82,13 @@ impl NodeRegistry {
         self.inner.len()
     }
 
+    pub fn get_metrics(&self) -> (usize, usize, usize) {
+        let len = self.inner.len();
+        let meta_nn = self.meta_node_number as usize;
+        let max_id = self.inner.values().map(|x| x.0 as usize).max().unwrap_or(0);
+        (len, meta_nn, max_id)
+    }
+
     #[allow(dead_code)]
     pub fn with_prefix(prefix: Vec<u8>) -> Self {
         Self {
@@ -98,7 +105,7 @@ impl NodeRegistry {
         // where X is a number, meta_node_number has to be set higher than the
         // highest of that
         if let Ok(number) = parsed_name {
-            if number > self.meta_node_number {
+            if number >= self.meta_node_number {
                 self.meta_node_number = number + 1;
             }
         }

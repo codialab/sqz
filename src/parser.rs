@@ -143,6 +143,13 @@ pub fn parse_file_to_digrams(
 ) -> Result<(NamedPath, NodeRegistry, DeterministicHashMap<usize, NodeId>)> {
     let data = bufreader_from_compressed(file)?;
     let (node_ids_by_name, _) = parse_node_ids(data, true, true)?;
+    let (i, n, m) = node_ids_by_name.get_metrics();
+    log::info!(
+        "Number of read in nodes: {}, Current meta node number: {}, Max Node Id: {}",
+        i,
+        n,
+        m
+    );
     let data = bufreader_from_compressed(file)?;
     parse_file_content_to_digrams(data, node_ids_by_name, should_print_other_lines, None)
 }
