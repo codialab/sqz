@@ -37,7 +37,7 @@ conda install -c conda-forge -c bioconda sqz
 ### Using a precompiled binary
 Use
 ```bash
-wget https://github.com/codialab/sqz/releases/download/v0.2.0/sqz
+wget https://github.com/codialab/sqz/releases/download/v0.2.2/sqz
 chmod +x sqz
 ```
 and make `sqz` available on your `PATH` to install it.
